@@ -1,15 +1,29 @@
 import './LoginButton.css';
 import googleIcon from '../assets/google-icon.png'; 
+import { useGoogleLogin } from '@react-oauth/google';
 
-// 1. 부모로부터 texts를 props로 받도록 수정합니다.
 function LoginButton({ texts }) {
+  // 로그인 성공시 발생 함수
+  const handleLoginSuccess = (credentialResponse) => {
+    console.log("로그인 성공:", credentialResponse);
+  };
+
+  // 로그인 실패시 발생 함수
+  const handleLoginError = () => {
+    console.log('로그인 실패');
+  };
+
+  const login = useGoogleLogin ({ // 구글 훅 로그인
+    onSuccess : handleLoginSuccess, 
+    onError : handleLoginError,
+  });
+
   return (
     <div className="login-button-container">
-      <button className="login-button">
-        <img src={googleIcon} alt="구글 로고" className="google-icon" />
-        {/* 2. 고정된 텍스트 대신, props로 받은 텍스트를 사용합니다. */}
-        <span>{texts.login}</span>
-      </button>
+        <button className = "login-button" onClick={() => login()}>
+         <img src={googleIcon} alt="구글 로그인 아이콘" className="google-icon" />
+         <span> {texts.login} </span>
+        </button>
     </div>
   );
 }
