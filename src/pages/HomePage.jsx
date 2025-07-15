@@ -5,7 +5,7 @@ import mainPhoto from '../assets/foreigner-Photo.png';
 
 
 function HomePage () {
-    const {texts} = useOutletContext ();
+    const {texts, setIsLoggedIn } = useOutletContext ();
     
     return (
         <>
@@ -15,7 +15,7 @@ function HomePage () {
         </div>
         
         <img src = {mainPhoto} alt = "메인 이미지" className="main-photo" />
-        <LoginButton texts = {texts} />
+        <LoginButton texts = {texts} setIsLoggedIn = {setIsLoggedIn} />
         </>
     );
 }

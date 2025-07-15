@@ -4,11 +4,13 @@
 #root {
   width: 100%;
   max-width: 1920px; /* 최대 너비를 1920px로 설정 */
-  min-height: 1080px; 
-  background: rgba(250, 245, 235, 1);
+  min-height: 100vh;; 
+  background: #E6DCDC;
   box-sizing: border-box;
-  margin: 100px auto;
+  margin: 0 auto;
   position: relative; 
+  display : flex;
+  flex-direction: column;
 
   .main-text {
   position: absolute;
@@ -37,4 +39,7 @@
   object-fit: cover;
   opacity: 0.8;
 }
+  .main-outlet {
+    flex-grow: 1; /* Outlet이 남은 공간을 차지하도록 설정 */
+  }
 }

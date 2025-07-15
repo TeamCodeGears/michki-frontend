@@ -93,7 +93,35 @@ export const texts = {
             <p> 본 개인정보 처리방침은 2025년 7월 10일 부터 시행됩니다. </p>
       </>
     ),
+    searchPlaceholder : '도시명을 검색해보세요.',
+    tabJapan : '일본',
+    tabKorea : '한국',
+    myTrips : [
+      { name : '내 여행 1', date : '2025/07/01 ~ 2025/07/05' },
+      { name : '내 여행 2', date : '2025/06/15 ~ 2025/06/20' },
+    ],
+    pastTrips : [
+      { name : '지난 여행 1', date : '2025/05/01 ~ 2025/05/05' },
+      { name : '지난 여행 2', date : '2025/04/15 ~ 2025/04/20' },
+    ],
+    destinations : {
+      japan : [
+        { name : '오사카', engName : 'Osaka', image : 'osakaImage' , tag : 'New' },
+        { name : '도쿄', engName : 'Tokyo', image : 'osakaImage' , tag : 'New' },
+        { name : '삿포로', engName : 'Sapporo', image : 'osakaImage' , tag : 'New' },
+        { name : '후쿠오카', engName : 'Fukuoka', image : 'osakaImage' , tag : 'New' },
+        { name : '나고야', engName : 'Nagoya', image : 'osakaImage' , tag : 'New' },
+      ],
+      korea : [
+        { name : '서울', engName : 'Seoul', image : 'seoulImage' , tag : 'New' },
+        { name : '부산', engName : 'Busan', image : 'busanImage' , tag : 'New' },
+        { name : '제주도', engName : 'Jeju Island', image : 'jejuImage' , tag : 'New' },
+        { name : '인천', engName : 'Incheon', image : 'incheonImage' , tag : 'New' },
+        { name : '대구', engName : 'Daegu', image : 'daeguImage' , tag : 'New' },
+      ]
+    }
   },
+  // 일본어 번역
   ja: {
     catchphrase: '一緒に計画して、もっと完璧な旅行を',
     startNow: '今すぐ始めましょう！',
@@ -172,5 +200,32 @@ export const texts = {
             <p> 本個人情報保護方針は2025年7月10日から施行されます。 </p>
       </>
     ),
+    searchPlaceholder : '都市名を検索してください。',
+    tabJapan : '日本',
+    tabKorea : '韓国',
+    myTrips : [
+      { name : '私の旅行 1', date : '2025/07/01 ~ 2025/07/05' },
+      { name : '私の旅行 2', date : '2025/06/15 ~ 2025/06/20' },
+    ],
+    pastTrips : [
+      { name : '過去の旅行 1', date : '2025/05/01 ~ 2025/05/05' },
+      { name : '過去の旅行 2', date : '2025/04/15 ~ 2025/04/20' },
+    ],
+    destinations : {
+      japan : [
+        { name : '大阪', engName : 'Osaka', image : 'osakaImage' , tag : 'New' },
+        { name : '東京', engName : 'Tokyo', image : 'osakaImage' , tag : 'New' },
+        { name : '札幌', engName : 'Sapporo', image : 'osakaImage' , tag : 'New' },
+        { name : '福岡', engName : 'Fukuoka', image : 'osakaImage' , tag : 'New' },
+        { name : '名古屋', engName : 'Nagoya', image : 'osakaImage' , tag : 'New' },
+      ],
+      korea : [
+        { name : 'ソウル', engName : 'Seoul', image : 'seoulImage' , tag : 'New' },
+        { name : '釜山', engName : 'Busan', image : 'busanImage' , tag : 'New' },
+        { name : '済州島', engName : 'Jeju Island', image : 'jejuImage' , tag : 'New' },
+        { name : '仁川', engName : 'Incheon', image : 'incheonImage' , tag : 'New' },
+        { name : '大邱', engName : 'Daegu', image : 'daeguImage' , tag : 'New' },
+      ]
+    }
   },
 };

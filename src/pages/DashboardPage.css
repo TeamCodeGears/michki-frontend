@@ -1,0 +1,192 @@
+
+body {
+ font-family: 'Inria Sans', sans-serif; /* 기본 폰트 설정 (필요시 추가) */
+ background-color: #E6DCDC; /* 전체 배경색 */
+ margin: 0;
+ padding: 0;
+ display: flex;
+ justify-content: center; /* 페이지 중앙 정렬 */
+ align-items: center;
+ min-height: 100vh; /* 최소 화면 높이 */
+ box-sizing: border-box;
+}
+
+.dashboard-container {
+ position: relative;
+ width: 1920px; /* 스크린샷 기준 너비 */
+ height: 1080px; /* 스크린샷 기준 높이 */
+ background-color: #E6DCDC; /* 컨테이너 배경색 */
+ display: flex;
+}
+
+/* 왼쪽 사이드바 */
+.sidebar {
+ width: 450px;
+ height: 1053px;
+ background-color: #46463C;
+ border-radius: 20px;
+ padding: 30px;
+ box-sizing: border-box;
+}
+
+.sidebar .year-selector {
+ color: #E6DCDC;
+ font-size: 24px;
+ margin-bottom: 30px;
+ cursor: pointer;
+}
+
+.sidebar 
+.trip-list {
+ /* 여행 목록 스타일 */
+}
+
+.sidebar .trip-item {
+ background-color: #E6DCDC;
+ color: #000;
+ border-radius: 30px;
+ padding: 15px 20px;
+ margin-bottom: 15px;
+ display: flex;
+ justify-content: space-between;
+ align-items: center;
+ font-size: 16px;
+}
+
+.sidebar .trip-item.past {
+ opacity: 0.5;
+}
+
+/* 오른쪽 메인 콘텐츠 */
+.main-content {
+ flex-grow: 1;
+ padding: 30px;
+ box-sizing: border-box;
+ display: flex;
+ flex-direction: column;
+ align-items: center; /* 중앙 정렬 */
+}
+
+/* 지역 검색창 */
+.search-bar {
+ position: relative;
+ width: 566px;
+ height: 62px;
+ margin-top: 70px;
+ margin-bottom: 20px;
+ filter: drop-shadow(0px 14px 15px rgba(0, 0, 0, 0.25));
+}
+
+.search-bar input {
+ width: 100%;
+ height: 65px;
+ border-radius: 20px;
+ border: none;
+ padding: 0 60px 0 20px;;
+ font-size: 25px;
+ box-sizing: border-box;
+ opacity: 0.2;
+}
+
+.search-bar .search-button {
+ background: none;
+ border: none;
+ font-size: 25px;
+ cursor: pointer;
+ line-height : 1;
+ padding : 0;
+}
+
+.search-button-wrapper {
+  position: absolute; 
+  right: 10px; 
+  top: 50%;
+  transform: translateY(-50%);
+
+  width: 55px;  /* 박스 너비 */
+  height: 55px; /* 박스 높이 */
+  background-color: #46463C; /* 사이드바와 동일한 색상 */
+  border-radius: 13px; /* 라운딩 처리 */
+
+  /* 돋보기 아이콘(버튼)을 박스 정중앙에 배치 */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* 언어 변경 버튼 */
+.language-button-container {
+ position: absolute;
+ top: 50px;
+ right: -100px;
+}
+
+/* 국가 탭 */
+.country-tabs {
+ display: flex;
+ margin-bottom: 40px;
+}
+
+.country-tabs button {
+ background: none;
+ border: none;
+ font-size: 32px;
+ padding: 10px 30px;
+ cursor: pointer;
+ opacity: 0.2;
+ color: #000;
+}
+
+.country-tabs button.active {
+ opacity: 1;
+ color: #4C4C4C;
+}
+
+/* 여행지 카드 그리드 */
+.destination-grid {
+ display: grid;
+ grid-template-columns: repeat(3, 1fr); /* 3열 */
+ gap: 50px 30px; /* 행/열 간격 */
+ padding : 20px
+}
+
+.destination-card {
+ width: 354px;
+ /* 높이는 내용에 따라 자동 조절 */
+ border-radius: 35px;
+ overflow: hidden;
+ background-color: #fff; /* 카드 배경색 */
+ box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1); /* 그림자 */
+}
+
+.destination-card img {
+ width: 100%;
+ height: 236px;
+ object-fit: cover;
+}
+
+.destination-card .card-title {
+ font-size: 32px;
+ text-align: center;
+ padding: 10px;
+ color: #4C4C4C;
+}
+
+.destination-card .card-subtitle {
+ font-size: 24px;
+ text-align: center;
+ color: #4C4C4C;
+ opacity: 0.5;
+ padding-bottom: 10px;
+}
+
+.destination-card .new-badge {
+ position: absolute;
+ top: 10px;
+ left: 10px;
+ background-color: #FF4444;
+ color: white;
+ padding: 5px 10px;
+ border-radius: 5px;
+ font-size: 16px;
+}
