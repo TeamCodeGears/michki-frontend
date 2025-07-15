@@ -1,4 +1,6 @@
 import React from 'react';
+import osakaImage from '../assets/Osaka.jpg';
+import seoulImage from '../assets/Seoul.jpg';
 
 export const texts = {
   ko: {
@@ -106,18 +108,18 @@ export const texts = {
     ],
     destinations : {
       japan : [
-        { name : '오사카', engName : 'Osaka', image : 'osakaImage' , tag : 'New' },
-        { name : '도쿄', engName : 'Tokyo', image : 'osakaImage' , tag : 'New' },
-        { name : '삿포로', engName : 'Sapporo', image : 'osakaImage' , tag : 'New' },
-        { name : '후쿠오카', engName : 'Fukuoka', image : 'osakaImage' , tag : 'New' },
-        { name : '나고야', engName : 'Nagoya', image : 'osakaImage' , tag : 'New' },
+        { name : '오사카', engName : 'Osaka', image : osakaImage , tag : 'New' },
+        { name : '도쿄', engName : 'Tokyo', image : osakaImage , tag : 'New' },
+        { name : '삿포로', engName : 'Sapporo', image : osakaImage , tag : 'New' },
+        { name : '후쿠오카', engName : 'Fukuoka', image : osakaImage , tag : 'New' },
+        { name : '나고야', engName : 'Nagoya', image : osakaImage , tag : 'New' },
       ],
       korea : [
-        { name : '서울', engName : 'Seoul', image : 'seoulImage' , tag : 'New' },
-        { name : '부산', engName : 'Busan', image : 'busanImage' , tag : 'New' },
-        { name : '제주도', engName : 'Jeju Island', image : 'jejuImage' , tag : 'New' },
-        { name : '인천', engName : 'Incheon', image : 'incheonImage' , tag : 'New' },
-        { name : '대구', engName : 'Daegu', image : 'daeguImage' , tag : 'New' },
+        { name : '서울', engName : 'Seoul', image : seoulImage , tag : 'New' },
+        { name : '부산', engName : 'Busan', image : seoulImage , tag : 'New' },
+        { name : '제주도', engName : 'Jeju Island', image : seoulImage , tag : 'New' },
+        { name : '인천', engName : 'Incheon', image : seoulImage , tag : 'New' },
+        { name : '대구', engName : 'Daegu', image : seoulImage , tag : 'New' },
       ]
     }
   },
@@ -213,18 +215,18 @@ export const texts = {
     ],
     destinations : {
       japan : [
-        { name : '大阪', engName : 'Osaka', image : 'osakaImage' , tag : 'New' },
-        { name : '東京', engName : 'Tokyo', image : 'osakaImage' , tag : 'New' },
-        { name : '札幌', engName : 'Sapporo', image : 'osakaImage' , tag : 'New' },
-        { name : '福岡', engName : 'Fukuoka', image : 'osakaImage' , tag : 'New' },
-        { name : '名古屋', engName : 'Nagoya', image : 'osakaImage' , tag : 'New' },
+        { name : '大阪', engName : 'Osaka', image : osakaImage , tag : 'New' },
+        { name : '東京', engName : 'Tokyo', image : osakaImage , tag : 'New' },
+        { name : '札幌', engName : 'Sapporo', image : osakaImage , tag : 'New' },
+        { name : '福岡', engName : 'Fukuoka', image : osakaImage , tag : 'New' },
+        { name : '名古屋', engName : 'Nagoya', image : osakaImage , tag : 'New' },
       ],
       korea : [
-        { name : 'ソウル', engName : 'Seoul', image : 'seoulImage' , tag : 'New' },
-        { name : '釜山', engName : 'Busan', image : 'busanImage' , tag : 'New' },
-        { name : '済州島', engName : 'Jeju Island', image : 'jejuImage' , tag : 'New' },
-        { name : '仁川', engName : 'Incheon', image : 'incheonImage' , tag : 'New' },
-        { name : '大邱', engName : 'Daegu', image : 'daeguImage' , tag : 'New' },
+        { name : 'ソウル', engName : 'Seoul', image : seoulImage , tag : 'New' },
+        { name : '釜山', engName : 'Busan', image : seoulImage , tag : 'New' },
+        { name : '済州島', engName : 'Jeju Island', image : seoulImage , tag : 'New' },
+        { name : '仁川', engName : 'Incheon', image : seoulImage , tag : 'New' },
+        { name : '大邱', engName : 'Daegu', image : seoulImage , tag : 'New' },
       ]
     }
   },
