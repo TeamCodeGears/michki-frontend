@@ -8,15 +8,16 @@
 
 /* 현재 선택된 연도를 보여주는 상자 (버튼 역할) */
 .selected-year-display {
-  background-color: #E6DCDC;
-  border-radius: 5px;
+  background-color: #FAF5EB;
+  border: 1px solid #ddd;
+  border-radius: 10px;
   padding: 10px 15px;
   cursor: pointer;
   display: flex;
   justify-content: space-between;
   align-items: center;
   font-size: 20px;
-  color: #000000;
+  color: #333;
 }
 
 /* 드롭다운 메뉴 리스트 */
@@ -24,7 +25,7 @@
   position: absolute;
   top: 110%; /* 버튼 바로 아래에 위치 */
   width : 100%;
-  background-color: #E6DCDC;
+  background-color: #FAF5EB;
   border-radius: 5px;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
   list-style: none;

@@ -1,16 +1,18 @@
+import { useContext } from 'react';
 import './LoginButton.css';
 import googleIcon from '../assets/google-icon.png';
 import { useGoogleLogin } from '@react-oauth/google';
 import { useNavigate } from 'react-router-dom';
+import { LanguageContext } from '../context/LanguageContext';
 
-function LoginButton({ texts, setIsLoggedIn }) {
-
+function LoginButton({ setIsLoggedIn }) {
+  const { texts } = useContext(LanguageContext);
   const navigate = useNavigate();
 
   const handleLoginSuccess = (credentialResponse) => {
     console.log("로그인 성공!", credentialResponse);
-    setIsLoggedIn(true);     // 앱 로그인 상태로 변경
-    navigate('/dashboard');  // 로그인 후, 대쉬보드 페이지로
+    setIsLoggedIn(true);
+    navigate('/dashboard');
   };
 
   const handleLoginError = () => {

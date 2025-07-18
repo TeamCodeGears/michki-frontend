@@ -5,12 +5,20 @@
   position: absolute;
   top: 50px;
   right: 53px; 
-  /* 내부 아이콘과 텍스트를 나란히 배치 */
+  z-index: 20;
+
+  /* 디자인적 통일
+  background-color:  #FAF5EB;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid #ddd;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+*/
   display: flex;
   align-items: center;
   gap: 8px; /* 아이콘과 텍스트 사이 간격 */
   cursor: pointer; /* 마우스를 올리면 손가락 모양으로 변경 */
-  z-index: 20;
+
 }
 
 /* 아이콘 스타일 */

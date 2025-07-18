@@ -5,17 +5,27 @@
   width: 100%;
   max-width: 1920px; /* 최대 너비를 1920px로 설정 */
   min-height: 100vh;; 
-  background: #E6DCDC;
+  background: #FAF5EB;
   box-sizing: border-box;
   margin: 0 auto;
   position: relative; 
   display : flex;
   flex-direction: column;
+}
+.app-layout {
+  display:flex;
+  flex-direction : column;
+  flex-grow : 1;
+}
 
+.main-outlet {
+    flex-grow: 1; /* Outlet이 남은 공간을 차지하도록 설정 */
+}
+    
   .main-text {
   position: absolute;
   width: 969px;
-  left: 48%;
+  left: 50%;
   transform: translateX(-50%);
   top: 460px;
 
@@ -38,8 +48,4 @@
   top: -90px;
   object-fit: cover;
   opacity: 0.8;
-}
-  .main-outlet {
-    flex-grow: 1; /* Outlet이 남은 공간을 차지하도록 설정 */
-  }
 }

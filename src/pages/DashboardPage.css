@@ -1,28 +1,28 @@
-
+/*
 body {
- font-family: 'Inria Sans', sans-serif; /* 기본 폰트 설정 (필요시 추가) */
- background-color: #E6DCDC; /* 전체 배경색 */
+ font-family: 'Inria Sans', sans-serif; /*기본 폰트 설정 (필요시 추가)
+ background-color: #E6DCDC; /*전체 배경색
  margin: 0;
  padding: 0;
  display: flex;
- justify-content: center; /* 페이지 중앙 정렬 */
+ justify-content: center; /* 페이지 중앙 정렬
  align-items: center;
- min-height: 100vh; /* 최소 화면 높이 */
+ min-height: 100vh; /* 최소 화면 높이 
  box-sizing: border-box;
 }
-
+*/
 .dashboard-container {
  position: relative;
  width: 1920px; /* 스크린샷 기준 너비 */
- height: 1080px; /* 스크린샷 기준 높이 */
- background-color: #E6DCDC; /* 컨테이너 배경색 */
+ background-color: #FAF5EB; /* 컨테이너 배경색 */
  display: flex;
+ height: 100vh;
 }
 
 /* 왼쪽 사이드바 */
 .sidebar {
  width: 450px;
- height: 1053px;
+ height: 100vh; /* 화면 높이를 채우도록 설정 */
  background-color: #46463C;
  border-radius: 20px;
  padding: 30px;
@@ -35,27 +35,28 @@ body {
 }
 
 .sidebar .year-selector {
- color: #E6DCDC;
+ color: #FAF5EB;
  font-size: 24px;
  margin-bottom: 30px;
  cursor: pointer;
 }
 
-.sidebar 
 .trip-list {
- /* 여행 목록 스타일 */
+ flex-grow: 1; /* 남은 공간을 채우도록 설정 */
+ overflow-y: auto; /* 스크롤 가능 */
 }
 
 .sidebar .trip-item {
- background-color: #E6DCDC;
- color: #000;
- border-radius: 30px;
+ background-color: #FAF5EB;
+ color: #333;
+ border-radius: 10px;
  padding: 15px 20px;
  margin-bottom: 15px;
  display: flex;
  justify-content: space-between;
  align-items: center;
  font-size: 16px;
+ border: 1px solid #ddd
 }
 
 .sidebar .trip-item.past {
@@ -160,7 +161,7 @@ body {
  /* 높이는 내용에 따라 자동 조절 */
  border-radius: 35px;
  overflow: hidden;
- background-color: #fff; /* 카드 배경색 */
+ background-color: #FAF5EB; /* 카드 배경색 */
  box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1); /* 그림자 */
 }
 
@@ -194,4 +195,26 @@ body {
  padding: 5px 10px;
  border-radius: 5px;
  font-size: 16px;
+}
+
+.add-schedule-button-wrapper {
+  margin-top: auto;
+  padding-top: 20px; /* 여행 목록 최소 간격*/
+  display: flex;
+  justify-content: center;
+}
+
+.add-schedule-button {
+  width: 60px;
+  height: 60px;
+  border-radius: 15px; /* 원형 버튼 */
+  border: 1px solid #ddd;
+  background-color: #FAF5EB; /* 버튼 배경색 */
+  font-size: 30px;
+  color: #555;
+  cursor: pointer;
+
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
