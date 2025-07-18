@@ -1,8 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useContext } from 'react';
 import './LanguageButton.css';
 import langIcon from '../assets/language-icon.png';
+import { LanguageContext } from '../context/LanguageContext';
 
-function LanguageButton({ setLanguage, texts }) {
+function LanguageButton() {
+  const { setLanguage, texts } = useContext(LanguageContext);
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef(null);
   const timerRef = useRef(null);
@@ -60,8 +62,8 @@ function LanguageButton({ setLanguage, texts }) {
       </div>
       
       <ul className={`dropdown-menu ${isOpen ? 'open' : ''}`}>
-        <li onClick={() => setLanguage('ko')}>{texts.korean}</li>
-        <li onClick={() => setLanguage('ja')}>{texts.japanese}</li>
+        <li onClick={() => { setLanguage('ko'); closeMenu(); }}>{texts.korean}</li>
+        <li onClick={() => { setLanguage('ja'); closeMenu(); }}>{texts.japanese}</li>
       </ul>
     </div>
   );
