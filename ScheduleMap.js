@@ -11,7 +11,24 @@ import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import michikiLogo from './assets/michiki-logo.png';
 
+// DND-kit import
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+
 const GOOGLE_MAPS_API_KEY = 'AIzaSyDn1VXCTNaUR06NGsorLWChvsOKtsUrmH0';
+const GOOGLE_MAPS_LIBRARIES = ['places'];
+
 
 const containerStyle = {
   width: '100%',
@@ -22,6 +39,16 @@ const center = {
   lat: 43.0687,
   lng: 141.3508,
 };
+
+const categories = [
+  { label: "음식점", type: "restaurant", icon: "🍽️" },
+  { label: "호텔", type: "lodging", icon: "🛏️" },
+  { label: "즐길 거리", type: "tourist_attraction", icon: "📸" },
+  { label: "박물관", type: "museum", icon: "🏛️" },
+  { label: "대중교통", type: "transit_station", icon: "🚉" },
+  { label: "약국", type: "pharmacy", icon: "💊" },
+  { label: "ATM", type: "atm", icon: "🏧" },
+];
 
 function getDaysArr(startDate, endDate) {
   if (!startDate || !endDate) return [];
@@ -35,6 +62,137 @@ function getDaysArr(startDate, endDate) {
   return days;
 }
 
+// ----------- dnd-kit 용 SortableItem 컴포넌트 -----------
+function SortablePin({ pin, index, onClick, onDelete, selected, listeners, attributes, setNodeRef, style, isDragging }) {
+  return (
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        background: isDragging ? '#f0d8a8' : '#fff',
+        color: '#333',
+        marginBottom: 10,
+        borderRadius: 14,
+        padding: 10,
+        cursor: 'pointer',
+        boxShadow: '0 2px 8px #0002',
+        position: 'relative',
+        minHeight: 70,
+        opacity: isDragging ? 0.6 : 1,
+        ...style,
+      }}
+      onClick={onClick}
+    >
+      <div
+        style={{
+          width: 60,
+          height: 60,
+          background: '#eee',
+          borderRadius: 12,
+          backgroundImage: pin.photo ? `url(${pin.photo})` : undefined,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          marginRight: 10,
+        }}
+      ></div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontWeight: 600 }}>{pin.name}</div>
+        <div style={{ fontSize: 13, color: '#888' }}>
+          {pin.comment || '메모 없음'}
+        </div>
+      </div>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete();
+        }}
+        style={{
+          position: 'absolute',
+          top: 8,
+          right: 8,
+          background: 'none',
+          border: 'none',
+          color: '#222',
+          fontSize: 22,
+          cursor: 'pointer',
+          fontWeight: 700,
+          lineHeight: 1,
+        }}
+        title="삭제"
+      >
+        ×
+      </button>
+      {/* 순번 뱃지 */}
+      <div
+        style={{
+          position: 'absolute',
+          right: 10,
+          bottom: 10,
+          width: 22,
+          height: 22,
+          borderRadius: '50%',
+          background: '#f0d8a8',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontWeight: 600,
+          fontSize: 18,
+          zIndex: 1,
+        }}
+      >
+        {index + 1}
+      </div>
+      {/* DND 핸들(왼쪽 끝에 조그맣게 표시, 없어도됨) */}
+      <div style={{
+        position: 'absolute',
+        left: 4,
+        top: '50%',
+        transform: 'translateY(-50%)',
+        color: '#aaa',
+        fontSize: 20,
+        cursor: 'grab',
+        userSelect: 'none',
+      }}>
+        ≡
+      </div>
+    </div>
+  );
+}
+
+function DraggablePin({ pin, index, onClick, onDelete }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: String(pin.id) });
+  const style = {
+    transform: transform
+      ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
+      : undefined,
+    transition,
+    zIndex: isDragging ? 2 : 1,
+  };
+  return (
+    <SortablePin
+      pin={pin}
+      index={index}
+      onClick={onClick}
+      onDelete={onDelete}
+      listeners={listeners}
+      attributes={attributes}
+      setNodeRef={setNodeRef}
+      style={style}
+      isDragging={isDragging}
+    />
+  );
+}
+
 function ScheduleMap() {
   const [title, setTitle] = useState('여행');
   const [dateRange, setDateRange] = useState([null, null]);
@@ -44,16 +202,12 @@ function ScheduleMap() {
   const [selectedDayIdx, setSelectedDayIdx] = useState(0);
   const [showDayDropdown, setShowDayDropdown] = useState(false);
 
-  // 최신 일차 index 참조 ref (우클릭 이슈 해결용)
   const selectedDayIdxRef = useRef(selectedDayIdx);
-  useEffect(() => {
-    selectedDayIdxRef.current = selectedDayIdx;
-  }, [selectedDayIdx]);
+  useEffect(() => { selectedDayIdxRef.current = selectedDayIdx; }, [selectedDayIdx]);
 
-  // 지도/검색 상태
   const { isLoaded } = useJsApiLoader({
     googleMapsApiKey: GOOGLE_MAPS_API_KEY,
-    libraries: ['places'],
+    libraries: GOOGLE_MAPS_LIBRARIES,
   });
   const [infoWindow, setInfoWindow] = useState(null);
   const [searchInput, setSearchInput] = useState('');
@@ -61,9 +215,18 @@ function ScheduleMap() {
   const [selectedPin, setSelectedPin] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [autocomplete, setAutocomplete] = useState(null);
+  const [geocoder, setGeocoder] = useState(null);
+
   const mapRef = useRef(null);
   const rightClickListenerRef = useRef(null);
   const clickListenerRef = useRef(null);
+
+  const [nearbyMarkers, setNearbyMarkers] = useState([]); // 임시 마커
+  const [activeCategory, setActiveCategory] = useState(null);
+  const [showCategoryList, setShowCategoryList] = useState(false); // 결과 목록 토글
+
+  // === 동선(Polyline) 온오프 ===
+  const [showPath, setShowPath] = useState(true);
 
   // 날짜 바뀔 때 pinsByDay 동기화 & selectedDayIdx 안전처리
   useEffect(() => {
@@ -83,35 +246,6 @@ function ScheduleMap() {
     setSelectedDayIdx(idx => idx < daysArr.length ? idx : 0);
   }, [dateRange[0], dateRange[1]]);
 
-  // 복사 텍스트
-  const getPinShareText = () => {
-    const [startDate, endDate] = dateRange;
-    const daysArr = getDaysArr(startDate, endDate);
-    return (
-      `${title}\n` +
-      (startDate && endDate
-        ? `${startDate.toLocaleDateString('ko-KR').replace(/\./g, '.').replace(/\s/g, '')} ~ ${endDate.toLocaleDateString('ko-KR').replace(/\./g, '.').replace(/\s/g, '')}\n`
-        : '') +
-      (pinsByDay.length
-        ? pinsByDay
-            .map(
-              (pins, idx) =>
-                `${daysArr[idx] ? daysArr[idx].toLocaleDateString('ko-KR').replace(/\./g, '.').replace(/\s/g, '') : `${idx + 1}일차`}:\n` +
-                (pins.length
-                  ? pins
-                      .map(
-                        (p, i) =>
-                          `  ${i + 1}. ${p.name} (${p.position.lat}, ${p.position.lng})${p.comment ? ` - ${p.comment}` : ''}`
-                      )
-                      .join('\n')
-                  : '  장소 없음')
-            )
-            .join('\n\n')
-        : '등록된 일정이 없습니다.')
-    );
-  };
-
-  // 항상 {lat, lng} 변환
   function toLatLngObj(pos) {
     if (!pos) return null;
     if (typeof pos.lat === 'function' && typeof pos.lng === 'function') {
@@ -120,9 +254,10 @@ function ScheduleMap() {
     return pos;
   }
 
-  // 지도 로딩시 리스너 등록
+  // 지도 로딩시 리스너 등록 + Geocoder 등록
   const onLoadMap = (map) => {
     mapRef.current = map;
+    setGeocoder(new window.google.maps.Geocoder());
 
     if (rightClickListenerRef.current) {
       window.google.maps.event.removeListener(rightClickListenerRef.current);
@@ -132,7 +267,6 @@ function ScheduleMap() {
       window.google.maps.event.removeListener(clickListenerRef.current);
       clickListenerRef.current = null;
     }
-
     clickListenerRef.current = map.addListener('click', (e) => {
       if (e.placeId) {
         e.stop();
@@ -140,7 +274,10 @@ function ScheduleMap() {
         service.getDetails(
           {
             placeId: e.placeId,
-            fields: ['name', 'geometry', 'formatted_address', 'photos'],
+            fields: [
+              'name', 'geometry', 'formatted_address', 'photos', 'rating',
+              'user_ratings_total', 'types', 'formatted_phone_number'
+            ],
           },
           (place, status) => {
             if (status === window.google.maps.places.PlacesServiceStatus.OK) {
@@ -154,6 +291,9 @@ function ScheduleMap() {
                     place.photos && place.photos.length > 0
                       ? place.photos[0].getUrl()
                       : null,
+                  rating: place.rating,
+                  user_ratings_total: place.user_ratings_total,
+                  phone: place.formatted_phone_number,
                 },
               });
             }
@@ -162,7 +302,7 @@ function ScheduleMap() {
       }
     });
 
-    // **여기서 최신 selectedDayIdxRef.current 사용!**
+    // 우클릭 핀
     rightClickListenerRef.current = map.addListener('rightclick', (e) => {
       const latLng = e.latLng;
       if (!latLng) return;
@@ -185,6 +325,76 @@ function ScheduleMap() {
         )
       );
     });
+  };
+
+  // 카테고리 버튼 클릭시 주변 장소 검색 (선택 해제 기능 포함)
+  const handleNearbySearch = (type) => {
+    if (activeCategory === type) {
+      setActiveCategory(null);
+      setNearbyMarkers([]);
+      setShowCategoryList(false);
+      return;
+    }
+    setActiveCategory(type);
+    setNearbyMarkers([]);
+    setShowCategoryList(true);
+    if (!mapRef.current) return;
+    const map = mapRef.current;
+    const service = new window.google.maps.places.PlacesService(map);
+    const center = map.getCenter();
+
+    service.nearbySearch(
+      {
+        location: center,
+        radius: 1200,
+        type,
+      },
+      (results, status) => {
+        if (status === window.google.maps.places.PlacesServiceStatus.OK && results.length) {
+          setNearbyMarkers(results.slice(0, 20));
+        } else {
+          setNearbyMarkers([]);
+          alert("주변에 결과가 없습니다.");
+        }
+      }
+    );
+  };
+
+  // 주변 장소 상세조회 (getDetails) → InfoWindow 스타일로 표시
+  const showPlaceDetail = (place) => {
+    const map = mapRef.current;
+    if (!map) return;
+    const service = new window.google.maps.places.PlacesService(map);
+    service.getDetails(
+      {
+        placeId: place.place_id,
+        fields: [
+          'name', 'geometry', 'formatted_address', 'photos', 'rating',
+          'user_ratings_total', 'types', 'formatted_phone_number'
+        ]
+      },
+      (result, status) => {
+        if (status === window.google.maps.places.PlacesServiceStatus.OK) {
+          setInfoWindow({
+            position: {
+              lat: result.geometry.location.lat(),
+              lng: result.geometry.location.lng(),
+            },
+            info: {
+              name: result.name,
+              address: result.formatted_address,
+              photo:
+                result.photos && result.photos.length > 0
+                  ? result.photos[0].getUrl()
+                  : null,
+              rating: result.rating,
+              user_ratings_total: result.user_ratings_total,
+              phone: result.formatted_phone_number,
+            }
+          });
+        }
+      }
+    );
   };
 
   // 핀찍기 (선택 일차만)
@@ -211,6 +421,7 @@ function ScheduleMap() {
     );
     setInfoWindow(null);
     setSearchResult(null);
+    setSearchInput('');
   };
 
   // 핀 삭제
@@ -257,38 +468,64 @@ function ScheduleMap() {
 
     map.panTo(location);
     map.setZoom(15);
+    setNearbyMarkers([]);
+  };
+
+  // ------------------- DND kit 적용 -------------------
+  // 왼쪽 일정 리스트 드래그앤드롭용 sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  );
+  // 드래그 종료시 순서 변경
+  const pins = pinsByDay[selectedDayIdx] || [];
+  const handleDragEnd = (event) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = pins.findIndex(p => String(p.id) === String(active.id));
+    const newIndex = pins.findIndex(p => String(p.id) === String(over.id));
+    const newOrder = arrayMove(pins, oldIndex, newIndex).map((p, i) => ({
+      ...p,
+      order: i + 1,
+    }));
+
+    setPinsByDay((prev) =>
+      prev.map((dayPins, idx) =>
+        idx === selectedDayIdx ? newOrder : dayPins
+      )
+    );
   };
 
   if (!isLoaded) return <div>Loading...</div>;
 
   const [startDate, endDate] = dateRange;
   const daysArr = getDaysArr(startDate, endDate);
-  const pins = pinsByDay[selectedDayIdx] || [];
 
   return (
     <div style={{ display: 'flex', height: '100vh', background: '#fffbe5' }}>
-      {/* 왼쪽 패널 */}
+      {/* 왼쪽 패널 전체 */}
       <div
         style={{
-          width: 320,
+          width: 350,
           background: '#fffaf0',
           color: '#333',
           padding: 24,
           display: 'flex',
           flexDirection: 'column',
-          gap: 18,
+          gap: 12,
           borderRight: '1px solid #e2d5bb',
           boxSizing: 'border-box',
+          zIndex: 100,
         }}
       >
-        {/* 로고 + 공유버튼 */}
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+        {/* 로고 + 공유버튼 + 동선 토글 */}
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8, gap: 8 }}>
           <img src={michikiLogo} alt="Michiki" style={{ width: 36, height: 36 }} />
           <button
             type="button"
             onClick={async () => {
               try {
-                await navigator.clipboard.writeText(getPinShareText());
+                await navigator.clipboard.writeText(window.location.href);
                 alert('일정이 클립보드에 복사되었습니다!');
               } catch {
                 alert('복사 실패! (브라우저 권한 또는 HTTPS 환경 확인)');
@@ -302,8 +539,6 @@ function ScheduleMap() {
               padding: '7px 13px',
               fontWeight: 600,
               fontSize: 14,
-              marginLeft: 8,
-              marginTop: 2,
               height: 34,
               minWidth: 52,
               cursor: 'pointer',
@@ -311,14 +546,81 @@ function ScheduleMap() {
           >
             공유
           </button>
+          <button
+            type="button"
+            onClick={() => {
+  setShowPath(v => {
+    console.log("동선 토글:", !v);
+    return !v;
+  });
+}}
+
+            style={{
+              background: showPath ? '#f0d8a8' : '#e2d5bb',
+              color: '#222',
+              border: 'none',
+              borderRadius: 8,
+              padding: '7px 13px',
+              fontWeight: 600,
+              fontSize: 14,
+              height: 34,
+              minWidth: 52,
+              cursor: 'pointer',
+              marginLeft: 0
+            }}
+            title="동선 선(Polyline) 보이기/숨기기"
+          >
+            {showPath ? '동선 ON' : '동선 OFF'}
+          </button>
         </div>
+
+        {/* 카테고리 탐색 결과 */}
+        {showCategoryList && nearbyMarkers.length > 0 && (
+          <div style={{
+            maxHeight: 400, overflowY: "auto", marginBottom: 16, marginTop: 4,
+            background: "#fff", borderRadius: 10, boxShadow: "0 2px 6px #0001", padding: 8
+          }}>
+            <div style={{fontWeight:700, margin: "7px 0 8px 5px", fontSize: 16}}>검색 결과</div>
+            {nearbyMarkers.map(place => (
+              <div
+                key={place.place_id}
+                style={{
+                  display: "flex", alignItems: "center", marginBottom: 13,
+                  borderBottom: "1px solid #eee", paddingBottom: 8, cursor: "pointer"
+                }}
+                onClick={() => showPlaceDetail(place)}
+              >
+                <img src={
+                  place.photos && place.photos[0] ? place.photos[0].getUrl() :
+                  "https://via.placeholder.com/60?text=No+Image"
+                } style={{
+                  width: 60, height: 60, borderRadius: 9, objectFit: "cover", marginRight: 13
+                }} alt=""/>
+                <div style={{flex:1, minWidth:0}}>
+                  <div style={{fontWeight:600, fontSize:15, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>
+                    {place.name}
+                  </div>
+                  {place.rating &&
+                    <div style={{color:"#dc143c", fontSize:14}}>
+                      ⭐ {place.rating}
+                      <span style={{color:"#666", fontSize:13, marginLeft:6}}>({place.user_ratings_total}건)</span>
+                    </div>
+                  }
+                  <div style={{fontSize:12, color:"#888", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>
+                    {place.vicinity}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* 방 제목 */}
         <input
           value={title}
           onChange={e => setTitle(e.target.value)}
           style={{
-            fontWeight: 700,
+            fontWeight: 600,
             fontSize: 18,
             background: '#e7d3b5',
             border: 'none',
@@ -342,7 +644,7 @@ function ScheduleMap() {
               border: 'none',
               borderRadius: 10,
               padding: '9px 15px',
-              fontWeight: 500,
+              fontWeight: 600,
               fontSize: 16,
               color: '#222',
               cursor: 'pointer',
@@ -393,7 +695,7 @@ function ScheduleMap() {
                 border: 'none',
                 borderRadius: 8,
                 padding: '8px 15px',
-                fontWeight: 700,
+                fontWeight: 600,
                 fontSize: 16,
                 justifyContent: 'space-between',
                 cursor: 'pointer',
@@ -445,9 +747,32 @@ function ScheduleMap() {
 
         {/* 검색 폼 */}
         <form
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
-            handleAddPin();
+            if (searchResult) {
+              handleAddPin();
+              return;
+            }
+            if (searchInput.trim() && geocoder && mapRef.current) {
+              geocoder.geocode({ address: searchInput.trim() }, (results, status) => {
+                if (status === 'OK' && results[0]) {
+                  const loc = results[0].geometry.location;
+                  const location = { lat: loc.lat(), lng: loc.lng() };
+                  mapRef.current.panTo(location);
+                  mapRef.current.setZoom(14);
+                  setSearchResult({
+                    position: location,
+                    info: {
+                      name: results[0].formatted_address,
+                      address: results[0].formatted_address,
+                      photo: null,
+                    }
+                  });
+                } else {
+                  alert('해당 지역을 찾을 수 없습니다.');
+                }
+              });
+            }
           }}
           style={{ display: 'flex', marginBottom: 6 }}
         >
@@ -471,109 +796,90 @@ function ScheduleMap() {
             />
           </Autocomplete>
         </form>
-        {/* 일정 리스트 */}
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          {pins.map((pin) => (
-            <div
-              key={pin.id}
-              onClick={() => handlePinClick(pin)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                background: '#fff',
-                color: '#333',
-                marginBottom: 10,
-                borderRadius: 14,
-                padding: 10,
-                cursor: 'pointer',
-                boxShadow: '0 2px 8px #0002',
-                position: 'relative',
-                minHeight: 70,
-              }}
-            >
-              <div
-                style={{
-                  width: 60,
-                  height: 60,
-                  background: '#eee',
-                  borderRadius: 12,
-                  backgroundImage: pin.photo
-                    ? `url(${pin.photo})`
-                    : undefined,
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center',
-                  marginRight: 10,
-                }}
-              ></div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600 }}>{pin.name}</div>
-                <div style={{ fontSize: 13, color: '#888' }}>
-                  {pin.comment || '메모 없음'}
-                </div>
-              </div>
-              {/* 삭제(X) 버튼 */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDeletePin(pin.id);
-                }}
-                style={{
-                  position: 'absolute',
-                  top: 8,
-                  right: 8,
-                  background: 'none',
-                  border: 'none',
-                  color: '#222',
-                  fontSize: 22,
-                  cursor: 'pointer',
-                  fontWeight: 700,
-                  lineHeight: 1,
-                }}
-                title="삭제"
-              >
-                ×
-              </button>
-              {/* 우측 하단 끝에 순번 뱃지 */}
-              <div
-                style={{
-                  position: 'absolute',
-                  right: 10,
-                  bottom: 10,
-                  width: 32,
-                  height: 32,
-                  borderRadius: '50%',
-                  background: '#f0d8a8',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontWeight: 600,
-                  fontSize: 18,
-                  zIndex: 1,
-                }}
-              >
-                {pin.order}
-              </div>
+        {/* 일정 리스트 - DND kit 적용 */}
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={pins.map(p=>String(p.id))} strategy={verticalListSortingStrategy}>
+            <div style={{ flex: 1, overflowY: 'auto', minHeight: 50 }}>
+              {pins.map((pin, idx) => (
+                <DraggablePin
+                  key={pin.id}
+                  pin={pin}
+                  index={idx}
+                  onClick={() => handlePinClick(pin)}
+                  onDelete={() => handleDeletePin(pin.id)}
+                />
+              ))}
             </div>
-          ))}
-        </div>
+          </SortableContext>
+        </DndContext>
       </div>
       {/* 지도 */}
-      <div style={{ flex: 1, position: 'relative' }}>
+      <div style={{ flex: 1, position: 'relative', overflow: "hidden" }}>
+        {/* 상단 카테고리 버튼 바 */}
+        <div style={{
+          display: "flex",
+          gap: 14,
+          padding: "16px 0 10px 20px",
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 10,
+          minHeight: 60,
+          alignItems: "center"
+        }}>
+          {categories.map(cat => (
+            <button
+              key={cat.type}
+              onClick={() => handleNearbySearch(cat.type)}
+              style={{
+                border: "none",
+                outline: "none",
+                background: activeCategory === cat.type ? "#fffbe5" : "#fff",
+                color: "#222",
+                borderRadius: 22,
+                padding: "8px 18px 8px 12px",
+                boxShadow: "0 1px 8px #0002",
+                fontSize: 15,
+                fontWeight: 600,
+                display: "flex",
+                alignItems: "center",
+                gap: 7,
+                cursor: "pointer",
+                transition: "background 0.2s"
+              }}>
+              <span style={{ fontSize: 19, marginRight: 2 }}>{cat.icon}</span> {cat.label}
+            </button>
+          ))}
+        </div>
         <GoogleMap
           mapContainerStyle={containerStyle}
           center={center}
           zoom={14}
           onLoad={onLoadMap}
+          options={{
+          gestureHandling: "greedy",
+          clickableIcons: true,
+          mapTypeControl: false, // 지도 타입 버튼(위성/일반) 숨기기
+           fullscreenControl: false, // 전체화면 버튼 숨기기
+           streetViewControl: false, // 스트리트뷰 버튼 숨기기
+          zoomControl: true, // 줌 컨트롤은 유지(필요시 false)
+}}
+
         >
-          <Polyline
-            path={pins.map((p) => toLatLngObj(p.position))}
-            options={{
-              strokeColor: 'red',
-              strokeWeight: 3,
-              strokeOpacity: 1,
-              clickable: false,
-            }}
-          />
+          {/* 일정 Polyline (동선) */}
+          {showPath && (
+            <Polyline
+              path={pins.map((p) => toLatLngObj(p.position))}
+              options={{
+                strokeColor: 'red',
+                strokeWeight: 3,
+                strokeOpacity: 1,
+                clickable: false,
+              }}
+            />
+          )}
+          {/* 일정 핀(순번) */}
           {pins.map((pin) => (
             <Marker
               key={pin.id}
@@ -592,6 +898,22 @@ function ScheduleMap() {
               }}
             />
           ))}
+          {/* 카테고리 검색 결과 임시 마커 */}
+          {nearbyMarkers.map((place) => (
+            <Marker
+              key={place.place_id}
+              position={{
+                lat: place.geometry.location.lat(),
+                lng: place.geometry.location.lng(),
+              }}
+              icon={{
+                url: "https://maps.google.com/mapfiles/ms/icons/blue-dot.png",
+              }}
+              title={place.name}
+              onClick={() => showPlaceDetail(place)}
+            />
+          ))}
+          {/* InfoWindow */}
           {(infoWindow || searchResult) && (
             <InfoWindow
               position={toLatLngObj(
@@ -602,38 +924,84 @@ function ScheduleMap() {
                 setSearchResult(null);
               }}
             >
-              <div>
-                <div style={{ fontWeight: 600 }}>
-                  {(infoWindow || searchResult).info.name}
-                </div>
-                <div style={{ fontSize: 13, marginBottom: 4 }}>
-                  {(infoWindow || searchResult).info.address}
-                </div>
-                {(infoWindow || searchResult).info.photo && (
+              <div style={{
+                minWidth: 320,
+                maxWidth: 390,
+                display: 'flex',
+                flexDirection: 'row',
+                alignItems: 'flex-start',
+                fontFamily: 'Pretendard, Noto Sans KR, Arial, sans-serif',
+              }}>
+                {(infoWindow || searchResult).info.photo &&
                   <img
                     src={(infoWindow || searchResult).info.photo}
                     alt=""
                     style={{
-                      width: 160,
+                      width: 88,
+                      height: 88,
+                      objectFit: "cover",
                       borderRadius: 8,
-                      marginBottom: 6,
+                      marginRight: 18,
+                      flexShrink: 0,
                     }}
-                  />
-                )}
-                <button
-                  onClick={handleAddPin}
-                  style={{
-                    background: '#f0d8a8',
-                    border: 'none',
-                    borderRadius: 8,
-                    padding: '6px 20px',
-                    cursor: 'pointer',
-                    fontWeight: 600,
-                    marginTop: 8,
-                  }}
-                >
-                  핀찍기
-                </button>
+                  />}
+                <div style={{ flex: 1 }}>
+                  <div style={{
+                    fontWeight: 700,
+                    fontSize: 18,
+                    marginBottom: 6,
+                    lineHeight: 1.3,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6
+                  }}>
+                    {(infoWindow || searchResult).info.name}
+                  </div>
+                  {(infoWindow || searchResult).info.rating && (
+                    <div style={{ color: "#dc143c", fontWeight: 600, marginBottom: 3 }}>
+                      ⭐ {(infoWindow || searchResult).info.rating}
+                      <span style={{ color: "#666", fontWeight: 400, marginLeft: 7 }}>
+                        ({(infoWindow || searchResult).info.user_ratings_total}건)
+                      </span>
+                    </div>
+                  )}
+                  <div style={{
+                    fontSize: 14,
+                    color: "#555",
+                    marginBottom: 2,
+                    whiteSpace: "pre-line"
+                  }}>
+                    {(infoWindow || searchResult).info.address}
+                  </div>
+                  {(infoWindow || searchResult).info.phone && (
+                    <div style={{ fontSize: 14, color: "#555", marginBottom: 2 }}>
+                      <a
+                        href={`tel:${(infoWindow || searchResult).info.phone}`}
+                        style={{
+                          color: "#1769aa",
+                          textDecoration: "underline",
+                        }}
+                      >
+                        {(infoWindow || searchResult).info.phone}
+                      </a>
+                    </div>
+                  )}
+                  <button
+                    onClick={handleAddPin}
+                    style={{
+                      background: '#f0d8a8',
+                      border: 'none',
+                      borderRadius: 8,
+                      padding: '7px 22px',
+                      cursor: 'pointer',
+                      fontWeight: 600,
+                      marginTop: 12,
+                      fontSize: 16,
+                    }}
+                  >
+                    핀찍기
+                  </button>
+                </div>
               </div>
             </InfoWindow>
           )}
