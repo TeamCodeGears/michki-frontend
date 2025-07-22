@@ -53,8 +53,8 @@ function ScheduleCreationModal({ isOpen, onClose, destination, imageMap }) {
   const handleDestinationSelect = (dest) => {
     const desinationWithImages = {
       ...dest, 
-       image: imageMap[dest.engName],// 대표 이미지 찾기 (수정 필요)
-      slideshowImages: imageMap[dest.engName], // 슬라이드쇼 이미지 찾기 (수정 필요)
+       image: imageMap[dest.engName][0], // 대표 이미지
+      slideshowImages: imageMap[dest.engName], // 슬라이드쇼 이미지
     }
     setFinalDestination(desinationWithImages);
     setModalStep('form');
