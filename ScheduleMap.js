@@ -3,7 +3,6 @@ import {
   GoogleMap,
   useJsApiLoader,
   Marker,
-  Polyline,
   InfoWindow,
   Autocomplete,
 } from '@react-google-maps/api';
@@ -28,7 +27,6 @@ import {
 
 const GOOGLE_MAPS_API_KEY = 'AIzaSyDn1VXCTNaUR06NGsorLWChvsOKtsUrmH0';
 const GOOGLE_MAPS_LIBRARIES = ['places'];
-
 
 const containerStyle = {
   width: '100%',
@@ -228,6 +226,9 @@ function ScheduleMap() {
   // === 동선(Polyline) 온오프 ===
   const [showPath, setShowPath] = useState(true);
 
+  // pins을 최상단에서 선언! (아래에서 절대 선언하지 말 것)
+  const pins = pinsByDay[selectedDayIdx] || [];
+
   // 날짜 바뀔 때 pinsByDay 동기화 & selectedDayIdx 안전처리
   useEffect(() => {
     const [start, end] = dateRange;
@@ -253,6 +254,30 @@ function ScheduleMap() {
     }
     return pos;
   }
+
+  // 지도 Polyline 직접 관리
+  const polylineRef = useRef(null);
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    // Polyline 직접 생성/삭제
+    if (showPath && pins.length > 1) {
+      if (polylineRef.current) polylineRef.current.setMap(null);
+      polylineRef.current = new window.google.maps.Polyline({
+        path: pins.map((p) => toLatLngObj(p.position)),
+        strokeColor: 'red',
+        strokeWeight: 3,
+        strokeOpacity: 1,
+        clickable: false,
+        map: mapRef.current,
+      });
+    } else {
+      if (polylineRef.current) {
+        polylineRef.current.setMap(null);
+        polylineRef.current = null;
+      }
+    }
+  }, [showPath, pins, mapRef.current]);
 
   // 지도 로딩시 리스너 등록 + Geocoder 등록
   const onLoadMap = (map) => {
@@ -477,7 +502,6 @@ function ScheduleMap() {
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
   // 드래그 종료시 순서 변경
-  const pins = pinsByDay[selectedDayIdx] || [];
   const handleDragEnd = (event) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
@@ -548,13 +572,7 @@ function ScheduleMap() {
           </button>
           <button
             type="button"
-            onClick={() => {
-  setShowPath(v => {
-    console.log("동선 토글:", !v);
-    return !v;
-  });
-}}
-
+            onClick={() => setShowPath(v => !v)}
             style={{
               background: showPath ? '#f0d8a8' : '#e2d5bb',
               color: '#222',
@@ -858,27 +876,14 @@ function ScheduleMap() {
           zoom={14}
           onLoad={onLoadMap}
           options={{
-          gestureHandling: "greedy",
-          clickableIcons: true,
-          mapTypeControl: false, // 지도 타입 버튼(위성/일반) 숨기기
-           fullscreenControl: false, // 전체화면 버튼 숨기기
-           streetViewControl: false, // 스트리트뷰 버튼 숨기기
-          zoomControl: true, // 줌 컨트롤은 유지(필요시 false)
-}}
-
+            gestureHandling: "greedy",
+            clickableIcons: true,
+            mapTypeControl: false,
+            fullscreenControl: false,
+            streetViewControl: false,
+            zoomControl: true,
+          }}
         >
-          {/* 일정 Polyline (동선) */}
-          {showPath && (
-            <Polyline
-              path={pins.map((p) => toLatLngObj(p.position))}
-              options={{
-                strokeColor: 'red',
-                strokeWeight: 3,
-                strokeOpacity: 1,
-                clickable: false,
-              }}
-            />
-          )}
           {/* 일정 핀(순번) */}
           {pins.map((pin) => (
             <Marker
