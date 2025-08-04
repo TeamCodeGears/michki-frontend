@@ -1,0 +1,101 @@
+/* ---------------------------------------------------
+   Google Fonts: 다양한 폰트 사용을 위한 임포트
+---------------------------------------------------- */
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Jua&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Noto+Sans+KR:wght@100..900&family=Phudu:wght@300..900&family=Gowun+Batang&display=swap');
+
+/* ---------------------------------------------------
+   전체 공통 배경/폰트/기본 세팅 (html, body, #root 통일)
+---------------------------------------------------- */
+html, body, #root {
+  background: #FAF5EB !important;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  font-family: 'Noto Sans KR', 'Inter', 'Jua', 'Merriweather Sans', 'Gowun Batang', 'Phudu', Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: #213547;
+  box-sizing: border-box;
+}
+
+/* ---------------------------------------------------
+   #root: 앱 전체를 감싸는 최상위 컨테이너 (React 기준)
+---------------------------------------------------- */
+#root {
+  max-width: 1920px;
+  min-height: 100vh;
+  margin: 0 auto;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+/* ---------------------------------------------------
+   .app-layout: 페이지의 기본 레이아웃 구조
+---------------------------------------------------- */
+.app-layout {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+}
+
+/* ---------------------------------------------------
+   .main-outlet: React Router Outlet이 들어가는 영역
+---------------------------------------------------- */
+.main-outlet {
+  flex-grow: 1;
+  position: relative;
+  overflow: visible;
+}
+
+/* ---------------------------------------------------
+   .main-text: 메인 소개 텍스트 (가운데 띄우기, clamp로 반응형)
+---------------------------------------------------- */
+.main-text {
+  position: absolute;
+  width: 60vw;
+  max-width: 969px;
+  min-width: 300px;
+  left: 50%;
+  top: 30vh;                                  /* 반응형으로 높이 비율 변경 */
+  transform: translateX(-50%);
+  font-family: 'Noto Sans KR', sans-serif;
+  font-size: clamp(26px, 2.7vw, 42px);        /* 최소 26px ~ 최대 42px, 그 사이 2.7vw */
+  line-height: 1.5;
+  text-align: center;
+  color: #000;
+  z-index: 1;
+  font-weight: bold;
+  word-break: keep-all;
+}
+@media (max-width: 900px) {
+  .main-text {
+    font-size: 22px;
+    width: 95vw;
+    top: 18vw;
+  }
+}
+
+/* ---------------------------------------------------
+   .main-photo: 오른쪽에 크게 들어가는 메인 이미지 (반응형)
+---------------------------------------------------- */
+.main-photo {
+  position: absolute;
+  right: 4vw;
+  bottom: 0;
+  width: 31vw;
+  min-width: 260px;
+  max-width: 600px;
+  height: 65vh;
+  max-height: 90vh;
+  object-fit: cover;
+  opacity: 0.8;
+  z-index: 0;
+}
+@media (max-width: 900px) {
+  .main-photo {
+    display: none;
+  }
+}
