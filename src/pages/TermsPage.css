@@ -1,4 +1,5 @@
 .terms-container {
+    max-width: 960px;
     padding : 50px;
     color : #333;
     background: rgba(250, 245, 235, 1);

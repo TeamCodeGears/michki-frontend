@@ -207,6 +207,9 @@ function DashboardPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedDestination, setSelectedDestination] = useState(null);
 
+   // 🔥 검색어 상태
+  const [searchInput, setSearchInput] = useState("");
+
   const handleCardClick = (destinationData) => {
     const destinationWithImages = {
       ...destinationData,
@@ -227,6 +230,13 @@ function DashboardPage() {
     setIsModalOpen(false);
     setSelectedDestination(null);
   };
+
+   // 🔥 실시간 필터링 (한글/영어 모두 포함, 대소문자 구분 없음)
+  const filteredDestinations = texts.destinations[activeTab].filter(
+    (dest) =>
+      dest.name.includes(searchInput) ||
+      dest.engName.toLowerCase().includes(searchInput.toLowerCase())
+  );
 
   return (
     <div className="dashboard-container">
@@ -255,38 +265,75 @@ function DashboardPage() {
       </aside>
 
       <main className="main-content">
+        {/* 🔥 검색 입력창 */}
         <div className="search-bar">
-          <input type="text" placeholder={texts.searchPlaceholder} />
+          <input
+            type="text"
+            placeholder={texts.searchPlaceholder}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            style={{
+              flex: 1,
+              fontSize: 17,
+              fontFamily: "inherit",
+              border: "1px solid #e8e3cf",
+              borderRadius: 12,
+              padding: "9px 15px",
+              background: "#fffdf5",
+              color: "#333",
+            }}
+          />
           <div className="search-button-wrapper">
-            <button className="search-button">🔍</button>
+            <button className="search-button" tabIndex={-1}>🔍</button>
           </div>
         </div>
+
+        {/* 탭 */}
         <div className="country-tabs">
           <button
             className={`tab-item ${activeTab === "japan" ? "active" : ""}`}
-            onClick={() => setActiveTab("japan")}
+            onClick={() => { setActiveTab("japan"); setSearchInput(""); }}
           >
             {texts.tabJapan}
           </button>
           <button
             className={`tab-item ${activeTab === "korea" ? "active" : ""}`}
-            onClick={() => setActiveTab("korea")}
+            onClick={() => { setActiveTab("korea"); setSearchInput(""); }}
           >
             {texts.tabKorea}
           </button>
         </div>
+
+        {/* 🔥 검색어 반영된 카드 목록 */}
         <div className="destination-grid">
-          {texts.destinations[activeTab].map((dest) => (
-            <div
-              key={dest.name}
-              className="destination-card"
-              onClick={() => handleCardClick(dest)}
-            >
-              <img src={imageMap[dest.engName][0]} alt={dest.name} />
-              <div className="card-title">{dest.name}</div>
-              <div className="card-subtitle">{dest.engName}</div>
+          {filteredDestinations.length === 0 ? (
+            <div style={{ color: "#bbb", textAlign: "center", padding: 36 }}>
+              검색 결과가 없습니다.
             </div>
-          ))}
+          ) : (
+            filteredDestinations.map((dest) => (
+              <div
+                key={dest.name}
+                className="destination-card"
+                onClick={() => handleCardClick(dest)}
+                style={{
+                  cursor: "pointer",
+                  border: "1.5px solid #ece3d6",
+                  borderRadius: 14,
+                  overflow: "hidden",
+                  background: "#fff",
+                }}
+              >
+                <img
+                  src={imageMap[dest.engName][0]}
+                  alt={dest.name}
+                  style={{ width: "100%", height: 170, objectFit: "cover" }}
+                />
+                <div className="card-title" style={{ fontWeight: 700, fontSize: 19 }}>{dest.name}</div>
+                <div className="card-subtitle" style={{ color: "#888", fontSize: 15 }}>{dest.engName}</div>
+              </div>
+            ))
+          )}
         </div>
       </main>
 

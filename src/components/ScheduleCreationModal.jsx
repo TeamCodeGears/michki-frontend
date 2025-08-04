@@ -1,124 +1,153 @@
 import { useState, useEffect, useContext } from 'react';
+import { useNavigate } from 'react-router-dom'; // 🔸 페이지 이동용 훅
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import './ScheduleCreationModal.css';
-import { LanguageContext } from '../context/LanguageContext';
+import { LanguageContext } from '../context/LanguageContext'; // 🔸 다국어 텍스트 불러오기
 
 function ScheduleCreationModal({ isOpen, onClose, destination, imageMap }) {
-  // 모달의 현재 단계를 기억할 state ('country', 'destination', 'form')
+  // 🔸 모달 단계: 나라 선택, 도시 선택, 일정 입력
   const [modalStep, setModalStep] = useState('country');
-  // 사용자가 선택한 나라를 기억할 state
-  const [selectedCountry, setSelectedCountry] = useState(null);
-  // 사용자가 최종 선택한 여행지 정보를 기억할 state
-  const [finalDestination, setFinalDestination] = useState(null);
-  const [startDate, setStartDate] = useState(new Date());
-  const [endDate, setEndDate] = useState(new Date());
-  
-  const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const { texts } = useContext(LanguageContext); // 전체 텍스트 데이터 불러오기
+  const [selectedCountry, setSelectedCountry] = useState(null); // 선택한 나라
+  const [finalDestination, setFinalDestination] = useState(null); // 최종 도시
+  const [startDate, setStartDate] = useState(new Date()); // 출발일
+  const [endDate, setEndDate] = useState(new Date());     // 도착일
+  const [currentImageIndex, setCurrentImageIndex] = useState(0); // 이미지 슬라이드 인덱스
+  const [tripTitle, setTripTitle] = useState(""); // ⭐ 일정 이름 상태 추가
 
-  // 모달이 열릴 때마다 내부 상태를 초기화하는 로직
+  const { texts } = useContext(LanguageContext); // 다국어 텍스트
+  const navigate = useNavigate(); // 🔸 페이지 이동 함수
+
+  // 🔹 모달이 열릴 때 초기화
   useEffect(() => {
     if (isOpen) {
-      // 여행지 카드를 클릭해서 열린 경우
       if (destination) {
-        setFinalDestination(destination);
+        setFinalDestination(destination); // 카드 클릭 시
         setModalStep('form');
-      } else { // + 버튼을 눌러서 열린 경우
+      } else {
+        // + 버튼 클릭 시
         setModalStep('country');
         setSelectedCountry(null);
         setFinalDestination(null);
       }
+      setTripTitle(""); // ⭐ 일정 이름도 초기화
     }
   }, [isOpen, destination]);
 
-  // 슬라이드쇼 로직
+  // 🔹 슬라이드 이미지 타이머
   useEffect(() => {
-    if (isOpen && modalStep === 'form' && finalDestination?.slideshowImages?.length > 1) {
+    if (
+      isOpen &&
+      modalStep === 'form' &&
+      finalDestination?.slideshowImages?.length > 1
+    ) {
       const intervalId = setInterval(() => {
-        setCurrentImageIndex(prevIndex => (prevIndex + 1) % finalDestination.slideshowImages.length);
+        setCurrentImageIndex((prevIndex) =>
+          (prevIndex + 1) % finalDestination.slideshowImages.length
+        );
       }, 3000);
       return () => clearInterval(intervalId);
     }
   }, [isOpen, modalStep, finalDestination]);
 
-  if (!isOpen) return null;
+  if (!isOpen) return null; // 🔸 닫힌 상태면 렌더링 안함
 
-  // --- 이벤트 핸들러 ---
+  // 🔸 나라 선택
   const handleCountrySelect = (country) => {
     setSelectedCountry(country);
     setModalStep('destination');
   };
 
+  // 🔸 도시 선택
   const handleDestinationSelect = (dest) => {
-    const desinationWithImages = {
-      ...dest, 
-       image: imageMap[dest.engName][0], // 대표 이미지
-      slideshowImages: imageMap[dest.engName], // 슬라이드쇼 이미지
-    }
-    setFinalDestination(desinationWithImages);
+    const destinationWithImages = {
+      ...dest,
+      image: imageMap[dest.engName][0],
+      slideshowImages: imageMap[dest.engName],
+    };
+    setFinalDestination(destinationWithImages);
     setModalStep('form');
   };
 
+  // 🔸 생성 버튼 클릭 시 실행
   const handleSubmit = (event) => {
     event.preventDefault();
-    const scheduleData = {
-      destination: finalDestination.name,
-      startDate: startDate,
-      endDate: endDate,
-      // 일정 이름 등 다른 폼 데이터 추가
-    };
-    console.log("Creating schedule with:", scheduleData);
-    // 여기에 백엔드로 데이터를 전송하는 로직을 추가할 수 있습니다.
+    if (!finalDestination || !tripTitle) {
+      alert('일정 이름을 입력해 주세요.');
+      return;
+    }
+    navigate('/schedule', {
+      state: {
+        destination: finalDestination.name,
+        title: tripTitle,
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+      },
+    });
     onClose();
   };
 
-  // --- 각 단계별로 보여줄 오른쪽 콘텐츠를 렌더링하는 함수 ---
+  // 🔸 오른쪽 패널 (나라, 도시, 이미지)
   const renderRightPanel = () => {
     switch (modalStep) {
       case 'country':
         return (
           <div className="selection-panel">
-            <div className="selection-item" onClick={() => handleCountrySelect('japan')}>{texts.tabJapan}</div>
-            <div className="selection-item" onClick={() => handleCountrySelect('korea')}>{texts.tabKorea}</div>
+            <div
+              className="selection-item"
+              onClick={() => handleCountrySelect('japan')}
+            >
+              {texts.tabJapan}
+            </div>
+            <div
+              className="selection-item"
+              onClick={() => handleCountrySelect('korea')}
+            >
+              {texts.tabKorea}
+            </div>
           </div>
         );
       case 'destination':
         return (
           <div className="selection-panel">
-            {texts.destinations[selectedCountry].map(dest => (
-              <div key={dest.name} className="selection-item" onClick={() => handleDestinationSelect(dest)}>
+            {texts.destinations[selectedCountry].map((dest) => (
+              <div
+                key={dest.name}
+                className="selection-item"
+                onClick={() => handleDestinationSelect(dest)}
+              >
                 {dest.name}
               </div>
             ))}
           </div>
         );
       case 'form':
-        if (!finalDestination) return null;
-        return (
+        return finalDestination ? (
           <div className="image-section">
-            <img 
-              src={finalDestination.slideshowImages[currentImageIndex]} 
-              alt={finalDestination.name} 
-              className="modal-image" 
+            <img
+              src={finalDestination.slideshowImages[currentImageIndex]}
+              alt={finalDestination.name}
+              className="modal-image"
             />
           </div>
-        );
+        ) : null;
       default:
         return null;
     }
   };
 
+  // 🔸 렌더링
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2>일정 생성</h2>
-          <button className="close-button" onClick={onClose}>×</button>
+          <button className="close-button" onClick={onClose}>
+            ×
+          </button>
         </div>
         <div className="modal-body">
           <form className="schedule-form" onSubmit={handleSubmit}>
-            {/* 최종 단계에서만 폼 내용이 보이도록 설정 */}
             {modalStep === 'form' && finalDestination ? (
               <>
                 <div className="form-group">
@@ -127,21 +156,34 @@ function ScheduleCreationModal({ isOpen, onClose, destination, imageMap }) {
                 </div>
                 <div className="form-group">
                   <label>일정 이름</label>
-                  <input type="text" placeholder={`예: ${finalDestination.name} 3박 4일`} />
+                  <input
+                    type="text"
+                    value={tripTitle}
+                    onChange={e => setTripTitle(e.target.value)}
+                    placeholder={`예: ${finalDestination.name} 3박 4일`}
+                  />
                 </div>
                 <div className="form-group">
                   <label>일정</label>
                   <div className="date-picker-wrapper">
-                    <DatePicker selected={startDate} onChange={(date) => setStartDate(date)} />
+                    <DatePicker
+                      selected={startDate}
+                      onChange={(date) => setStartDate(date)}
+                    />
                     <span>~</span>
-                    <DatePicker selected={endDate} onChange={(date) => setEndDate(date)} />
+                    <DatePicker
+                      selected={endDate}
+                      onChange={(date) => setEndDate(date)}
+                    />
                   </div>
                 </div>
                 <div className="info-section">
                   <span>화폐: {finalDestination.currency}</span>
                   <span>전압: {finalDestination.voltage}</span>
                 </div>
-                <button type="submit" className="create-button">생성</button>
+                <button type="submit" className="create-button">
+                  생성
+                </button>
               </>
             ) : (
               <div className="form-placeholder">
