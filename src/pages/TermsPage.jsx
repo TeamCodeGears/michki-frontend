@@ -1,4 +1,3 @@
-import React from "react";
 import { useContext } from 'react';
 import './TermsPage.css';
 import { LanguageContext } from '../context/LanguageContext';

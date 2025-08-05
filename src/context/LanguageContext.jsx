@@ -1,4 +1,3 @@
-import React from 'react';
 import { createContext, useState, useMemo, useContext } from 'react';
 import { texts } from '../data/translations.js';
 
