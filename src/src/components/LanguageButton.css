@@ -1,0 +1,80 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Jua&family=Noto+Sans+KR:wght@100..900&family=Phudu:wght@300..900&display=swap');
+
+/* 언어 변경 버튼 전체를 감싸는 컨테이너 */
+.lang-button-container {
+  position: absolute;
+  top: 50px;
+  right: 53px; 
+  z-index: 20;
+
+  /* 디자인적 통일
+  background-color:  #FAF5EB;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid #ddd;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+*/
+  display: flex;
+  align-items: center;
+  gap: 8px; /* 아이콘과 텍스트 사이 간격 */
+  cursor: pointer; /* 마우스를 올리면 손가락 모양으로 변경 */
+
+}
+
+/* 아이콘 스타일 */
+.lang-icon {
+  width: 40px;
+  height: 40px;
+}
+
+/* 텍스트 스타일 */
+.lang-text {
+  font-family: 'Inter', sans-serif;
+  font-size: 20px;
+  color: #000000;
+}
+
+/* 드롭다운 메뉴 스타일 */
+.dropdown-menu {
+  position: absolute;
+  top: 120%;
+  right: 0;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  list-style: none;
+  padding: 10px 0;
+  margin: 0;
+  width: 150px;
+  z-index: 10;
+  /* 애니메이션을 위한 초기 상태 설정 */
+  opacity: 0; /* 완전히 투명하게 */
+  visibility: hidden; /* 화면에서 안보이고, 클릭도 안되게 */
+  transform: translateY(-10px); /* 살짝 위에서 나타나는 효과 */
+  transition: opacity 0.3s ease, transform 0.3s ease, visibility 0.3s; /* 부드러운 전환 효과 */
+}
+
+/* 드롭다운 메뉴의 각 항목(li) 스타일 */
+.dropdown-menu li {
+  font-family: 'Inter', sans-serif;
+  padding: 12px 10px;
+  font-size: 17px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.5s;
+  text-align: center;
+  color: #000000;
+  border-radius: 14px;
+  margin: 4px;
+}
+/* open 클래스가 추가되었을 때의 스타일 */
+.dropdown-menu.open {
+  opacity: 1; /* 완전히 보이게 */
+  visibility: visible; /* 화면에 보이고, 클릭도 되게 */
+  transform: translateY(0); /* 원래 위치로 */
+}
+
+/* 각 항목에 마우스를 올렸을 때 스타일 */
+.dropdown-menu li:hover {
+  background-color: rgba(250, 245, 235, 1);
+}

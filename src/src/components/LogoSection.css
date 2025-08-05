@@ -1,0 +1,66 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@100..900&family=Phudu:wght@300..900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Jua&family=Noto+Sans+KR:wght@100..900&family=Phudu:wght@300..900&display=swap');
+
+.logo-section-link,
+.logo-section-link:visited {
+  text-decoration: none;
+  color: inherit;
+}
+
+.logo-section {
+  position: absolute;
+  left: 50px; /* Figma의 Frame left 값 */
+  top: 50px; /* Figma의 Frame top 값 */
+  width: 300px; /* Figma의 Frame width 값 */
+  height: 300px; /* Figma의 Frame height 값 */
+}
+
+.logo-frame {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.logo {
+  position: absolute;
+  left: -20px; 
+  top: -20px; 
+  width: 150px; 
+  height: 150px; 
+  background-blend-mode: darken;
+  border-radius: 124px;
+}
+
+.logo-text-group {
+  position: absolute;
+  left: 95px; /* Figma의 道記 left 값 */
+  top: 67px; /* Figma의 道記 top 값 */
+}
+
+.logo-title-kanji {
+  font-family: 'Phudu', sans-serif;
+  font-style: normal;
+  font-weight: 400;
+  font-size: 40px;
+  line-height: 49px;
+  text-align: center;
+  color: #000000;
+  opacity: 0.3;
+  white-space: nowrap;
+}
+
+.logo-title-en { /*michiki 영어*/
+  position: absolute;
+  left: -70px; /* Michiki left 값*/
+  top: 35px; /* Michiki top 값*/
+  font-family: 'Jua', sans-serif; 
+  font-style: normal;
+  font-weight: 400;
+  font-size: 50px;
+  line-height: 62px;
+  text-align: center;
+  color: #000000;
+}
+
+.frame-image {
+}
