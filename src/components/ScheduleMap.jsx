@@ -1,3 +1,5 @@
+import { createPlace } from "../api/place"; // 상단에서 반드시 import
+import { updatePlace } from "../api/place"; // 상단 import
 import React, { useState, useRef, useEffect } from "react";
 import {
   GoogleMap,
@@ -7,7 +9,7 @@ import {
 } from "@react-google-maps/api";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
-import michikiLogo from "../assets/michiki-logo.png";
+import michikiLogo from "../assets/michiki-logo.webp";
 import { getDaysArr } from "../hooks/useDaysArray";
 import toLatLngObj from "../utils/toLatLngObj";
 import DraggablePin from "./DraggablePin";
@@ -363,27 +365,52 @@ function ScheduleMap() {
   };
 
   // ====== 핀 추가(장소 정보창에서 '핀찍기' 누를 때) ======
-  const handleAddPin = () => {
+  const handleAddPin = async () => {
     if (!infoWindow && !searchResult) return;
     const data = infoWindow || searchResult;
     const position = toLatLngObj(data.position);
 
-    setPinsByDay((prev) =>
-      prev.map((pins, idx) =>
-        idx === selectedDayIdx
-          ? [
-            ...pins,
-            {
-              id: Date.now(),
-              ...data.info,
-              position,
-              order: pins.length + 1,
-              comment: "",
-            },
-          ]
-          : pins
-      )
-    );
+    // 🗓️ 여행 날짜 계산 (현재 선택된 날짜 인덱스로)
+    const travelDate = daysArr[selectedDayIdx].toISOString().split("T")[0]; // 'YYYY-MM-DD'
+
+    // 🔐 로그인 토큰 가져오기
+    const accessToken = localStorage.getItem("accessToken"); // 또는 user.accessToken
+
+    try {
+      // ✅ 백엔드에 장소 등록
+      await createPlace(planId, {
+        name: data.info.name || "장소",
+        description: data.info.address || "",
+        latitude: position.lat,
+        longitude: position.lng,
+        googlePlaceId: data.info.placeId || "", // 구글 place ID
+        travelDate,
+        orderInDay: pins.length + 1,
+      }, accessToken);
+
+      // ✅ 프론트 상태에 핀 추가 (기존과 동일)
+      setPinsByDay((prev) =>
+        prev.map((pins, idx) =>
+          idx === selectedDayIdx
+            ? [
+              ...pins,
+              {
+                id: Date.now(),
+                ...data.info,
+                position,
+                order: pins.length + 1,
+                comment: "",
+              },
+            ]
+            : pins
+        )
+      );
+    } catch (err) {
+      console.error(err);
+      alert("장소 등록 실패: " + err.message);
+    }
+
+    // 💫 후처리
     setInfoWindow(null);
     setSearchResult(null);
     setSearchInput("");
@@ -983,7 +1010,8 @@ function ScheduleMap() {
           pin={selectedPin}
           open={modalOpen}
           onClose={handleModalClose}
-          onCommentChange={(comment) => {
+          onCommentChange={async (comment) => {
+            // 프론트 상태 업데이트
             setPinsByDay((arr) =>
               arr.map((pins, idx) =>
                 idx !== selectedDayIdx
@@ -997,7 +1025,27 @@ function ScheduleMap() {
               ...p,
               comment,
             }));
+
+            // 백엔드 API 호출
+            try {
+              const accessToken = localStorage.getItem("accessToken");
+              if (!accessToken) throw new Error("로그인이 필요합니다");
+
+              const position = selectedPin.position;
+              await updatePlace(planId, {
+                placeId: selectedPin.placeId,
+                name: selectedPin.name || "장소",
+                description: comment,
+                latitude: position.lat,
+                longitude: position.lng,
+                googlePlaceId: selectedPin.placeId || "",
+              }, accessToken);
+            } catch (err) {
+              console.error("메모 수정 실패:", err);
+              alert("메모 수정 실패: " + err.message);
+            }
           }}
+
         />
       </div>
     </div>

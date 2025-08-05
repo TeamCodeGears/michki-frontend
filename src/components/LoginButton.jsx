@@ -1,65 +1,68 @@
-import { useContext } from "react";
-import "./LoginButton.css";
-import googleIcon from "../assets/google-icon.webp";
-import { useGoogleLogin } from "@react-oauth/google";
-import { useNavigate } from "react-router-dom";
-import { LanguageContext } from "../context/LanguageContext";
-import { useAuth } from "../hooks/useAuth";
-import { googleLoginApi } from "../api/member";
+import React, { useContext } from 'react';
+import './LoginButton.css';
+import googleIcon from '../assets/google-icon.webp';
+import { useGoogleLogin } from '@react-oauth/google';
+import { useNavigate } from 'react-router-dom';
+import { LanguageContext } from '../context/LanguageContext';
 
-function LoginButton() {
-  const { login } = useAuth();
+// 서버 요청 함수도 code로 받도록 바꿔야 함!
+async function googleLoginApi(googleAuthCode) {
+  const res = await fetch('/member/google/login', {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: googleAuthCode }), // ← 핵심!
+  });
+  if (!res.ok) throw new Error("구글 로그인 실패");
+  return await res.json();
+}
+
+function LoginButton({ setIsLoggedIn, setUser }) {
   const { texts } = useContext(LanguageContext);
   const navigate = useNavigate();
 
-  const handleGoogleLoginSuccess = async (credentialResponse) => {
-    /* console.log("Google 로그인 성공! (백엔드 API 호출은 임시로 건너뜁니다.)", credentialResponse);*/
-    /*  const handleGoogleLoginSuccess = async (credentialResponse) => {*/
- try {
-      const { accessToken, refreshToken } = await googleLoginApi(credentialResponse.credential);
-      login(accessToken);
-      localStorage.setItem("refreshToken", refreshToken);
-      navigate("/dashboard");
+  const handleLoginSuccess = async (tokenResponse) => {
+    console.log("구글 인증 코드:", tokenResponse.code); // code 확인!
+    try {
+      // 1. 구글 프로필 요청은 code 기반으로 할 수 없으므로(옵션에 따라 필요하면 생략)
+      // 실제로 code만 서버로 보내고, 서버에서 구글 프로필 처리하는 경우가 많음
 
-    } catch (error) {
-      console.error("로그인 처리 중 오류 : ", error);
-      alert("로그인에 실패했습니다. 다시 시도해주세요.");
+      // 2. 내 백엔드에 구글 인증코드 전달!
+      const backendLogin = await googleLoginApi(tokenResponse.code);
+
+      // 3. 상태 업데이트 & 토큰 저장
+      // (서버에서 내려주는 정보로 setUser/로그인 처리)
+      setUser(backendLogin.user || {}); // 서버에서 user 정보 반환 시
+      setIsLoggedIn(true);
+
+      if (backendLogin.accessToken) {
+        localStorage.setItem('accessToken', backendLogin.accessToken);
+      }
+      if (backendLogin.refreshToken) {
+        localStorage.setItem('refreshToken', backendLogin.refreshToken);
+      }
+
+      navigate('https://teamcodegears.github.io/michki-frontend/oauth/google/redirect');
+    } catch (err) {
+      console.error("로그인 실패:", err);
+      setIsLoggedIn(false);
     }
-
-    /*
-     // --*프론트 엔드 테스트를 위함*--
-    login ("TEMPORAY_ACCESS_TOKEN") //임시 토큰 발행 
-    navigate('/dashboard'); // 대시보드 이동을 위함*/
-  };
-
-  const googleLogin = useGoogleLogin({
-    onSuccess: handleGoogleLoginSuccess,
-    onError: () => console.log("Google 로그인 실패"),
-  });
-  /*
-    console.log("로그인 성공!", credentialResponse);
-    setIsLoggedIn(true);
-    navigate('/dashboard');
   };
 
   const handleLoginError = () => {
     console.log('로그인 실패');
   };
-  
+
+  // flow: 'auth-code' 옵션 추가!!
   const login = useGoogleLogin({
+    flow: 'auth-code',
     onSuccess: handleLoginSuccess,
     onError: handleLoginError,
   });
-  */
 
   return (
     <div className="login-button-container">
-      <button className="login-button" onClick={() => googleLogin()}>
-        <img
-          src={googleIcon}
-          alt="구글 로그인 아이콘"
-          className="google-icon"
-        />
+      <button className="login-button" onClick={() => login()}>
+        <img src={googleIcon} alt="구글 로그인 아이콘" className="google-icon" />
         <span>{texts.login}</span>
       </button>
     </div>

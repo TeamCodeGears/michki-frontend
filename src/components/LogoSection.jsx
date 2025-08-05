@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import './LogoSection.css';
-import logoImage from '../assets/michiki-logo.png'; // 실제 로고 이미지 파일명으로 변경
+import logoImage from '../assets/michiki-logo.webp'; // 실제 로고 이미지 파일명으로 변경
 
 function LogoSection() {
   return (
