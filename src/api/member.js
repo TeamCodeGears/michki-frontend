@@ -33,7 +33,7 @@ export async function googleLoginApi(googleAccessToken) {
   const res = await fetch('/member/google/login', {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token: googleAccessToken }),
+    body: JSON.stringify({ code: googleAccessToken }),
   });
   if (!res.ok) throw new Error("구글 로그인 실패");
   return await res.json();
