@@ -897,7 +897,6 @@ function ScheduleMap() {
                 display: "block",
                 boxSizing: "border-box",
                 margin: 0,
-
               }}
             />
 

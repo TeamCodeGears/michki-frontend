@@ -1,10 +1,14 @@
 // vite.config.js
-export default {
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+export default defineConfig({
+  plugins: [react()],
+  base: '/dashboard/',
   server: {
-    proxy: {
-      // 백엔드의 경로에 맞게 작성 (여기서는 /member, /auth)
-      '/member': 'http://43.200.191.212',
-      '/auth': 'http://43.200.191.212',
-    },
+    host: true,
+    port: 5173,
+    strictPort: true,
+    allowedHosts: 'all',
   },
-};
+})

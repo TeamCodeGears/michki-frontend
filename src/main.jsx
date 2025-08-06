@@ -10,8 +10,7 @@ import HomePage from './pages/HomePage.jsx';
 import DashboardPage from './pages/DashboardPage.jsx';
 import TermsPage from './pages/TermsPage.jsx';
 import PrivacyPage from './pages/PrivacyPage.jsx';
-import Schedule from './pages/Schedule.jsx'; // ✅ 추가된 Schedule
-
+import Schedule from './pages/Schedule.jsx';
 import { LanguageProvider } from './context/LanguageContext';
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -25,7 +24,7 @@ const router = createHashRouter([
       { path: 'dashboard', element: <DashboardPage /> },
       { path: 'terms', element: <TermsPage /> },
       { path: 'privacy', element: <PrivacyPage /> },
-      { path: 'schedule', element: <Schedule /> }, // ✅ Schedule 경로 추가
+      { path: 'schedule', element: <Schedule /> },
     ],
   },
 ]);

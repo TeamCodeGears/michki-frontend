@@ -2,7 +2,7 @@ import React from 'react';
 import { useContext } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import LoginButton from '../components/LoginButton';
-import mainPhoto from '../assets/foreigner-Photo.webp';
+import mainPhoto from '../assets/MainPhoto.webp';
 import { LanguageContext } from '../context/LanguageContext';
 
 function HomePage() {
