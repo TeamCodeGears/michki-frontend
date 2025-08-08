@@ -1,0 +1,71 @@
+/* 홈 전용: 뷰포트 한 화면에 정확히 맞추고 넘침 차단 */
+.home-viewport {
+  position: relative;
+  width: 100%;
+  height: 100dvh;            /* 모바일 주소창 변동에도 안정적인 높이 */
+  overflow: hidden;          /* 내부 요소가 살짝 커도 스크롤 안 생기게 */
+  box-sizing: border-box;
+}
+
+/* 가운데 큰 문구 블록 */
+.hero-center {
+  position: absolute;
+  left: 50%;
+  top: 38vh;                  /* 세로 중앙보다 약간 위 */
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;       /* 텍스트 위 클릭 통과 */
+}
+
+.hero-title {
+  margin: 0;                  /* h1 기본 마진 제거 → 스크롤 방지 */
+  font-weight: 800;
+  color: #000;
+  line-height: 1.35;
+  font-size: clamp(22px, 3vw, 42px);
+  word-break: keep-all;
+}
+
+/* 오른쪽 히어로 이미지 */
+.hero-image {
+  position: absolute;
+  right: 3vw;
+  bottom: 16vh;              /* 높일수록 이미지가 위로 올라감 */
+  width: min(32vw, 520px);
+  height: auto;
+  max-width: 90vw;
+  opacity: .96;
+  filter: drop-shadow(0 12px 30px rgba(0,0,0,.15));
+}
+
+/* 하단 고정 CTA: 푸터 위 중앙(필요시 수치만 조절) */
+.home-cta {
+  position: absolute;
+  left: 50%;
+  bottom: 9.5vh;             /* 푸터와 간격; 작게 하면 더 아래로 */
+  transform: translateX(-50%);
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+/* 구글 버튼 컨테이너가 중앙에 딱 붙도록 */
+.home-cta .login-button-container {
+  margin: 0;                  /* 상단 여백 제거 */
+}
+
+/* 반응형: 모바일에선 이미지 숨겨 텍스트/버튼 집중 */
+@media (max-width: 900px) {
+  .hero-image {
+    right: 3vw;
+    bottom: 14vh;
+    width: min(46vw, 360px);
+  }
+}
+
+@media (max-width: 720px) {
+  .hero-image { display: none; }
+  .hero-center { top: 34vh; }
+  .home-cta { bottom: 8.5vh; }
+}

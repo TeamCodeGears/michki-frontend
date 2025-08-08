@@ -1,5 +1,4 @@
-// /src/api/auth.js
-
+// src/api/auth.js
 // 프록시 환경에서는 BASE_URL 필요 없음
 
 // 4. 토큰 재발급
@@ -10,5 +9,5 @@ export async function refreshAccessToken(refreshToken) {
     body: JSON.stringify({ refreshToken }),
   });
   if (!res.ok) throw new Error("토큰 재발급 실패");
-  return await res.json();
+  return await res.json(); // { accessToken }
 }

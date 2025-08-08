@@ -1,73 +1,134 @@
-// src/components/LoginButton.jsx
-import { useNavigate } from "react-router-dom"; // 추가
-import React, { useContext } from "react";
+import React, { useContext, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import "./LoginButton.css";
 import googleIcon from "../assets/google-icon.webp";
 import { useGoogleLogin } from "@react-oauth/google";
 import { LanguageContext } from "../context/LanguageContext";
 
-// code만 받아서 백엔드로 전달하는 함수
+const API_BASE =
+  (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_BASE) ||
+  "http://localhost:8080";
+
 async function googleLoginApi(code) {
-  const res = await fetch("http://www.michiki.org/member/google/login", {
+  const url = `${API_BASE}/member/google/login`;
+  const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code }),
   });
-  if (!res.ok) throw new Error("구글 로그인 실패");
-  console.log("@@응답값:", res.json.toString);
-  return res.json();
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`구글 로그인 실패: ${res.status} ${text}`);
+  }
+  const data = await res.json();
+  console.log("@@백엔드 응답:", data);
+  return data;
 }
 
-function LoginButton({ setIsLoggedIn, setUser }) {
+function LoginButton({ isLoggedIn, setIsLoggedIn, setUser }) {
   const { texts } = useContext(LanguageContext);
-  const navigate = useNavigate(); // 추가
+  const navigate = useNavigate();
 
-  // 성공 콜백: code를 바로 받도록 구조분해
+  const [loading, setLoading] = useState(false);
+  const [errMsg, setErrMsg] = useState("");
+
   const handleLoginSuccess = async ({ code }) => {
-    console.log("구글 인증 코드:", code);
-    try {
-      const backendLogin = await googleLoginApi(code);
+  setErrMsg("");
+  setLoading(true);
+  try {
+    const backendLogin = await googleLoginApi(code);
 
-      // 상태 업데이트 & 토큰 저장
-      setUser({ id: backendLogin.id });
-      setIsLoggedIn(true);
-      if (backendLogin.accessToken) {
-        localStorage.setItem("accessToken", backendLogin.accessToken);
-      }
-      if (backendLogin.refreshToken) {
-        localStorage.setItem("refreshToken", backendLogin.refreshToken);
-      }
+    const name = backendLogin?.name ?? "";
+    const picture = backendLogin?.picture ?? "";
 
-      // 백엔드에서 처리된 후, 실제 OAuth 콜백 엔드포인트로 리디렉트
-      navigate("/dashboard");
-    } catch (err) {console.error("로그인 실패:", err);
-      setIsLoggedIn(false);
+    if (backendLogin?.id) {
+      const nextUser = { id: backendLogin.id, name, picture };
+      setUser(nextUser);
+      localStorage.setItem("user", JSON.stringify(nextUser)); // 로그인 유지용
     }
+
+    if (backendLogin?.accessToken) {
+      localStorage.setItem("accessToken", backendLogin.accessToken);
+    }
+    if (backendLogin?.refreshToken) {
+      localStorage.setItem("refreshToken", backendLogin.refreshToken);
+    }
+
+    setIsLoggedIn(true);
+    navigate("/dashboard"); // 필요하면 { replace: true } 붙여도 됨
+  } catch (err) {
+    console.error("로그인 실패:", err);
+    setIsLoggedIn(false);
+    setErrMsg(err?.message || "로그인 중 오류가 발생했습니다.");
+  } finally {
+    setLoading(false);
+  }
+};
+
+
+  const handleLoginError = (err) => {
+    console.error("구글 로그인 중 오류 발생:", err);
+    setErrMsg("구글 로그인 중 오류가 발생했습니다.");
   };
 
-  const handleLoginError = () => {
-    console.log("구글 로그인 중 오류 발생");
-  };
+  const redirectUri =
+    (typeof import.meta !== "undefined" &&
+      import.meta.env?.VITE_GOOGLE_REDIRECT_URI) ||
+    "http://localhost:5173";
 
-  // useGoogleLogin에 redirect_uri 옵션을 추가
   const login = useGoogleLogin({
     flow: "auth-code",
-    redirect_uri: "http://www.michiki.org",
-    // redirect_uri: import.meta.env.VITE_GOOGLE_REDIRECT_URI,
+    redirect_uri: redirectUri,
     onSuccess: handleLoginSuccess,
     onError: handleLoginError,
   });
 
+  // 로그인 상태일 때 누르면 대시보드로 이동하는 버튼
+  const handleStartClick = () => {
+    navigate("/dashboard");
+  };
+
+  if (isLoggedIn) {
+    return (
+      <button
+        className="start-button"
+        onClick={handleStartClick}
+        aria-label="시작하기"
+      >
+        {texts.start}
+      </button>
+    );
+  }
+
+  // 로그인 안 된 상태의 구글 로그인 버튼
   return (
     <div className="login-button-container">
-      <button className="login-button" onClick={() => login()}>
+      <button
+        className="login-button"
+        onClick={() => login()}
+        disabled={loading}
+        aria-busy={loading}
+      >
         <img
           src={googleIcon}
           alt="구글 로그인 아이콘"
           className="google-icon"
         />
-        <span>{texts.login}</span>
+        <span>{loading ? "로그인 중..." : texts.login}</span>
       </button>
+
+      {errMsg ? (
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: 12,
+            color: "#c00",
+            wordBreak: "break-all",
+          }}
+        >
+          {errMsg}
+        </div>
+      ) : null}
     </div>
   );
 }

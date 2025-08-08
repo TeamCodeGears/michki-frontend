@@ -1,4 +1,5 @@
-
+import { useEffect } from "react";
+import { useNavigate, useOutletContext } from "react-router-dom";
 import { useState, useContext } from "react";
 import "./DashboardPage.css";
 import YearSelector from "../components/YearSelector";
@@ -200,7 +201,10 @@ const imageMap = {
   ],
 };
 
-function DashboardPage() {
+function DashboardPage() { 
+  const navigate = useNavigate();
+  const { isLoggedIn } = useOutletContext();
+  useEffect(() => { if (!isLoggedIn) navigate("/", { replace: true }); }, [isLoggedIn, navigate]);
   const { language } = useContext(LanguageContext);
   const texts = allTexts[language];
   const [activeTab, setActiveTab] = useState("japan");
