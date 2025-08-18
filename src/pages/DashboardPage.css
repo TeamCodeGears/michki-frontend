@@ -186,3 +186,42 @@
   opacity: 0.5;
   padding-bottom: 10px;
 }
+
+/* 상단: 로고 위, 연도 아래 — 왼쪽 정렬 */
+.sidebar-top {
+  display: flex;
+  flex-direction: column; /* 세로 배치 */
+  align-items: flex-start; /* ✅ 왼쪽 정렬 */
+  gap: 8px;                /* 위아래 간격 */
+  margin-bottom: 0px;     /* 아래 요소와 간격 */
+}
+
+.logo-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start; /* 왼쪽 정렬 */
+}
+
+.logo-img {
+  width: 36px;   /* 일정 아이템 높이와 비슷하게 */
+  height: 36px;
+  display: block;
+}
+
+.year-wrap {
+  display: flex;
+  justify-content: flex-start; /* 왼쪽 정렬 */
+  width: 100%;                 /* trip-item과 폭 맞추려면 */
+}
+
+.year-wrap .year-selector {
+  margin: 0;
+  text-align: left; /* 글자 왼쪽 정렬 */
+  width: auto;      /* 내용만큼만 */
+}
+
+

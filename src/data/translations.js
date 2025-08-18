@@ -1,3 +1,5 @@
+import Schedule from "../pages/Schedule";
+
 export const texts = {
   ko: {
     language: '언어',
@@ -30,6 +32,18 @@ export const texts = {
     login: "로그인",
     start: "시작하기",
     logout: "로그아웃",
+    requestScheduleName: "일정 이름을 입력하세요.",
+    CurrencyType: "화폐: ", 
+    voltage: "전압: ",
+    travelDestination: "여행지",
+    scheduleName: "일정 이름",
+    schedule: "일정",
+    scheduleCreate: "일정생성",
+    create: "생성", 
+    notSchedule: "올해 계획이 없어요.",
+    FailedCreate: "생성에 실패하였습니다.",
+
+    
     myTrips: [
       { name: '내 여행 1', date: '2025/07/01 ~ 2025/07/05' },
       { name: '내 여행 2', date: '2025/06/15 ~ 2025/06/20' },
@@ -108,6 +122,16 @@ export const texts = {
     login: "ログイン",
     start: "始める",
     logout: "ログアウト",
+    requestScheduleName: "日程名を入力してください。",
+    CurrencyType: "貨幣: ", 
+    voltage: "電圧: ",
+    travelDestination: "旅行地",
+    scheduleName: "日程名",
+    schedule: "日程",
+    scheduleCreate: "日程生成",
+    create: "生成",  
+    notSchedule: "今年は計画がありません。",
+    FailedCreate: "作成に失敗しました。",
 
     myTrips: [
       { name: '私の旅行 1', date: '2025/07/01 ~ 2025/07/05' },

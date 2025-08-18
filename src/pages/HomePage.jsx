@@ -1,7 +1,7 @@
 import React, { useContext, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import LoginButton from '../components/LoginButton';
-import mainPhoto from '../assets/MainPhoto.webp';
+import homeImage from '../assets/tokyo.jpg'; // snow.png로 교체!
 import { LanguageContext } from '../context/LanguageContext';
 import './HomePage.css';
 
@@ -17,15 +17,20 @@ function HomePage() {
 
   return (
     <div className="home-viewport">
+      {/*  tokyo.png 배경 레이어 */}
+      <img
+        className="home-bg-image"
+        src={homeImage}
+        alt="배경 이미지"
+        aria-hidden="true"
+      />
+
       {/* 가운데 큰 문구 */}
       <div className="hero-center">
         <h1 className="hero-title">
           {texts.catchphrase}<br />{texts.startNow}
         </h1>
       </div>
-
-      {/* 오른쪽 히어로 이미지 */}
-      <img className="hero-image" src={mainPhoto} alt="여행 이미지" />
 
       {/* 하단 중앙 CTA (푸터 위에 뜨도록) */}
       <div className="home-cta">

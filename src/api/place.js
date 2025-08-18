@@ -1,41 +1,27 @@
-// src/api/place.js
+import http from "./http";
 
-// 장소 등록 API
-export async function createPlace(planId, data, accessToken) {
-  const res = await fetch(`/plans/${planId}/places`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${accessToken}`,
-    },
-    body: JSON.stringify(data),
-  });
+// 장소 생성
+export const createPlace = async (planId, dto) => {
+  const res = await http.post(`/plans/${planId}/places`, dto);
+  return res.data;
+};
 
-  if (!res.ok) {
-    const msg = await res.text();
-    throw new Error("장소 등록 실패: " + msg);
-  }
+// 장소 수정
+export const updatePlace = async (planId, placeId, dto) => {
+  const res = await http.put(`/plans/${planId}/places/${placeId}`, dto);
+  return res.data;
+};
 
-  return await res.json(); // 응답은 string일 수 있음
-}
+// 장소 삭제
+export const deletePlace = (planId, placeId) =>
+  http.delete(`/plans/${planId}/places/${placeId}`);
 
-// 📁 src/api/place.js
+// 순서 재정렬
+export const reorderPlaces = (planId, order) =>
+  http.put(`/plans/${planId}/places/reorder`, { order });
 
-export async function updatePlace(planId, data, accessToken) {
-  const res = await fetch(`/plans/${planId}/places`, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${accessToken}`,
-    },
-    body: JSON.stringify(data),
-  });
-
-  if (!res.ok) {
-    const msg = await res.text();
-    throw new Error("장소 수정 실패: " + msg);
-  }
-
-  return await res.json(); // 응답은 string일 수 있음
-}
-
+// 추천 장소
+export const recommendPlaces = async (planId, dto) => {
+  const res = await http.post(`/plans/${planId}/recommendations`, dto);
+  return res.data;
+};

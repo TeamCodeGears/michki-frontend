@@ -1,5 +1,5 @@
 // src/App.jsx
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import "./App.css";
 import LogoSection from "./components/LogoSection";
@@ -11,7 +11,6 @@ function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState(null);
 
-  // 앱 시작 시 로그인 상태 복구
   useEffect(() => {
     try {
       const access = localStorage.getItem("accessToken");
@@ -26,12 +25,16 @@ function App() {
   }, []);
 
   const location = useLocation();
-  // /schedule 및 하위 경로에서 Footer/AvatarDock 숨김
+
+  // /schedule 하위에서는 Footer/AvatarDock 숨김
   const hideOnSchedule = location.pathname.startsWith("/schedule");
+
+  // /dashboard 에서는 상단 로고 숨김
+  const hideLogoOnDashboard = location.pathname.startsWith("/dashboard");
 
   return (
     <div className="app-layout">
-      <LogoSection />
+      {!hideLogoOnDashboard && <LogoSection />}
       <LanguageButton />
 
       <main className="main-outlet">

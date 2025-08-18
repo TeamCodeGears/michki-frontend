@@ -1,8 +1,6 @@
 import React from "react";
 import ScheduleMap from "../components/ScheduleMap";
 
-function Schedule() {
+export default function Schedule() {
   return <ScheduleMap />;
 }
-
-export default Schedule;

@@ -1,11 +1,13 @@
 // src/components/AvatarDock.jsx
-import React from "react";
+import React, {useContext} from "react";
 import { useNavigate } from "react-router-dom";
+import { LanguageContext } from "../context/LanguageContext";
 
 export default function AvatarDock({ user, isLoggedIn, setIsLoggedIn, setUser }) {
   if (!isLoggedIn) return null;
 
   const navigate = useNavigate();
+  const { texts } = useContext(LanguageContext);
   const name = user?.name || "";
   const picture = user?.picture || "";
 
@@ -79,10 +81,10 @@ export default function AvatarDock({ user, isLoggedIn, setIsLoggedIn, setUser })
           cursor: "pointer",
           boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
         }}
-        title="로그아웃"
-        aria-label="로그아웃"
+        title={texts.logout}
+        aria-label={texts.logout}
       >
-        로그아웃
+        {texts.logout}
       </button>
     </div>
   );

@@ -1,13 +1,27 @@
-// src/api/auth.js
-// 프록시 환경에서는 BASE_URL 필요 없음
+import http from "./http";
 
-// 4. 토큰 재발급
-export async function refreshAccessToken(refreshToken) {
-  const res = await fetch('/auth/refresh-token', {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refreshToken }),
-  });
-  if (!res.ok) throw new Error("토큰 재발급 실패");
-  return await res.json(); // { accessToken }
-}
+// 백엔드: POST /member/google/login (idToken 전달 형식은 현재 구현과 동일하게 맞춰주세요)
+export const googleLogin = async (payload) => {
+  const res = await http.post("/member/google/login", payload);
+  return res.data; // {accessToken, refreshToken, user: {...}} 형태라고 가정
+};
+
+export const logout = async () => {
+  try {
+    await http.post("/member/logout");
+  } finally {
+    localStorage.removeItem("accessToken");
+    localStorage.removeItem("refreshToken");
+    localStorage.removeItem("user");
+  }
+};
+
+export const withdraw = async () => {
+  try {
+    await http.post("/member/withdraw");
+  } finally {
+    localStorage.removeItem("accessToken");
+    localStorage.removeItem("refreshToken");
+    localStorage.removeItem("user");
+  }
+};

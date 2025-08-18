@@ -12,17 +12,18 @@ export async function apiFetch(path, options = {}, retry = true) {
 
   let res = await fetch(API_BASE + path, { ...options, headers });
 
+  // 401 → 토큰 재발급 시도
   if (res.status === 401 && retry && refreshToken) {
     try {
-      const data = await refreshAccessToken(refreshToken); // { accessToken }
+      const data = await refreshAccessToken(refreshToken);
       if (data?.accessToken) {
         localStorage.setItem('accessToken', data.accessToken);
+        if (data?.refreshToken) localStorage.setItem('refreshToken', data.refreshToken);
         const headers2 = new Headers(options.headers || {});
         headers2.set('Authorization', `Bearer ${data.accessToken}`);
         res = await fetch(API_BASE + path, { ...options, headers: headers2 });
       }
     } catch (e) {
-      // 재발급 실패 → 로그인 해제
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
       localStorage.removeItem('user');

@@ -1,11 +1,11 @@
-import { useEffect } from "react";
+import { useEffect, useState, useContext } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
-import { useState, useContext } from "react";
 import "./DashboardPage.css";
 import YearSelector from "../components/YearSelector";
 import ScheduleCreationModal from "../components/ScheduleCreationModal";
 import { LanguageContext } from "../context/LanguageContext";
-import { texts as allTexts } from "../data/translations"; // texts import
+import { texts as allTexts } from "../data/translations";
+import { listPlans, deletePlan } from "../api/plans";
 
 import osakaImage1 from "../assets/Osaka1.webp";
 import osakaImage2 from "../assets/Osaka2.webp";
@@ -145,12 +145,7 @@ const imageMap = {
   Tokyo: [tokyoImage1, tokyoImage2, tokyoImage3, tokyoImage4],
   Sapporo: [sapporoImage1, sapporoImage2, sapporoImage3, sapporoImage4],
   Kyoto: [kyotoImage1, kyotoImage2, kyotoImage3, kyotoImage4],
-  Kitakyushu: [
-    kitakyushuImage1,
-    kitakyushuImage2,
-    kitakyushuImage3,
-    kitakyushuImage4,
-  ],
+  Kitakyushu: [kitakyushuImage1, kitakyushuImage2, kitakyushuImage3, kitakyushuImage4],
   Nagoya: [nagoyaImage1, nagoyaImage2, nagoyaImage3, nagoyaImage4],
   Nara: [naraImage1, naraImage2, naraImage3, naraImage4],
   Nikko: [nikkoImage1, nikkoImage2, nikkoImage3, nikkoImage4],
@@ -161,22 +156,12 @@ const imageMap = {
   Okinawa: [okinawaImage1, okinawaImage2, okinawaImage3, okinawaImage4],
   Yokohama: [yokohamaImage1, yokohamaImage2, yokohamaImage3, yokohamaImage4],
   Fukuoka: [fukuokaImage1, fukuokaImage2, fukuokaImage3, fukuokaImage4],
-  Hiroshima: [
-    hiroshimaImage1,
-    hiroshimaImage2,
-    hiroshimaImage3,
-    hiroshimaImage4,
-  ],
+  Hiroshima: [hiroshimaImage1, hiroshimaImage2, hiroshimaImage3, hiroshimaImage4],
   // Korea
   Seoul: [seoulImage1, seoulImage2, seoulImage3, seoulImage4],
   Busan: [busanImage1, busanImage2, busanImage3, busanImage4],
   "Jeju Island": [jejuImage1, jejuImage2, jejuImage3, jejuImage4],
-  Gangneung: [
-    gangneungImage1,
-    gangneungImage2,
-    gangneungImage3,
-    gangneungImage4,
-  ],
+  Gangneung: [gangneungImage1, gangneungImage2, gangneungImage3, gangneungImage4],
   Gyeongju: [gyeongjuImage1, gyeongjuImage2, gyeongjuImage3, gyeongjuImage4],
   Gwangju: [gwangjuImage1, gwangjuImage2, gwangjuImage3, gwangjuImage4],
   Damyang: [damyangImage1, damyangImage2, damyangImage3, damyangImage4],
@@ -186,45 +171,54 @@ const imageMap = {
   Suwon: [suwonImage1, suwonImage2, suwonImage3, suwonImage4],
   Suncheon: [suncheonImage1, suncheonImage2, suncheonImage3, suncheonImage4],
   Yeosu: [yeosuImage1, yeosuImage2, yeosuImage3, yeosuImage4],
-  Ulleungdo: [
-    ulleungdoImage1,
-    ulleungdoImage2,
-    ulleungdoImage3,
-    ulleungdoImage4,
-  ],
+  Ulleungdo: [ulleungdoImage1, ulleungdoImage2, ulleungdoImage3, ulleungdoImage4],
   Jeonju: [jeonjuImage1, jeonjuImage2, jeonjuImage3, jeonjuImage4],
-  Chuncheon: [
-    chuncheonImage1,
-    chuncheonImage2,
-    chuncheonImage3,
-    chuncheonImage4,
-  ],
+  Chuncheon: [chuncheonImage1, chuncheonImage2, chuncheonImage3, chuncheonImage4],
 };
 
-function DashboardPage() { 
+function DashboardPage() {
   const navigate = useNavigate();
   const { isLoggedIn } = useOutletContext();
-  useEffect(() => { if (!isLoggedIn) navigate("/", { replace: true }); }, [isLoggedIn, navigate]);
   const { language } = useContext(LanguageContext);
   const texts = allTexts[language];
+
   const [activeTab, setActiveTab] = useState("japan");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedDestination, setSelectedDestination] = useState(null);
-
-   // 🔥 검색어 상태
   const [searchInput, setSearchInput] = useState("");
+
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [remotePlans, setRemotePlans] = useState([]);
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      navigate("/", { replace: true });
+      return;
+    }
+  }, [isLoggedIn, navigate]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await listPlans(year);
+        setRemotePlans(data);
+      } catch (e) {
+        console.error("plans fetch failed", e);
+      }
+    })();
+  }, [year]);
 
   const handleCardClick = (destinationData) => {
     const destinationWithImages = {
       ...destinationData,
-      image: imageMap[destinationData.engName][0], // 대표 이미지
-      slideshowImages: imageMap[destinationData.engName], // 슬라이드쇼 이미지
+      image: imageMap[destinationData.engName][0],
+      slideshowImages: imageMap[destinationData.engName],
     };
     setSelectedDestination(destinationWithImages);
     setIsModalOpen(true);
   };
 
-  // + 버튼 클릭시, 'null'상태로 모달을 염
+  // 왼쪽 “+” → 작은 모달
   const handleNewScheduleClick = () => {
     setSelectedDestination(null);
     setIsModalOpen(true);
@@ -235,7 +229,10 @@ function DashboardPage() {
     setSelectedDestination(null);
   };
 
-   // 🔥 실시간 필터링 (한글/영어 모두 포함, 대소문자 구분 없음)
+  const onCreated = () => {
+    listPlans(year).then(setRemotePlans).catch(console.error);
+  };
+
   const filteredDestinations = texts.destinations[activeTab].filter(
     (dest) =>
       dest.name.includes(searchInput) ||
@@ -245,31 +242,80 @@ function DashboardPage() {
   return (
     <div className="dashboard-container">
       <aside className="sidebar">
-        <YearSelector />
-        <div className="trip-list">
-          {texts.myTrips.map((trip) => (
-            <div key={trip.name} className="trip-item">
-              <span className="trip-name">{trip.name}</span>
-              <span className="trip-date">{trip.date}</span>
+        <div className="sidebar-top" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div className="year-wrap">
+            <YearSelector value={year} onChange={(y) => setYear(Number(String(y).match(/\d{4}/)?.[0]))} />
+          </div>
+        </div>
+
+        <div className="trip-list" style={{ marginTop: 12 }}>
+          {remotePlans.length === 0 ? (
+            <div className="trip-item" style={{ justifyContent: "center" }}>
+              {texts.notSchedule}
             </div>
-          ))}
-          {texts.pastTrips.map((trip) => (
-            <div key={trip.name} className="trip-item past">
-              <span className="trip-name">{trip.name}</span>
-              <span className="trip-date">{trip.date}</span>
-            </div>
-          ))}
-          <div
-            className="trip-item add-new-trip"
-            onClick={handleNewScheduleClick}
-          >
+          ) : (
+            remotePlans.map((p) => (
+              <div
+                key={p.planId}
+                className="trip-item"
+                onClick={() => navigate(`/schedule/${p.planId}`)}
+                style={{
+                  cursor: "pointer",
+                  position: "relative", // X 버튼 기준점
+                  paddingLeft: 28,       // 왼쪽 위 버튼 자리 확보
+                }}
+              >
+                <span className="trip-name">{p.title}</span>
+                <span className="trip-date">
+                  {p.startDate} ~ {p.endDate}
+                </span>
+
+                {/* 삭제 버튼: 카드 안 '왼쪽 위' 고정 */}
+                <button
+                  aria-label="일정 삭제"
+                  title="일정 삭제"
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    const ok = confirm(`"${p.title}" 일정을 삭제할까요? 이 작업은 되돌릴 수 없어요.`);
+                    if (!ok) return;
+                    try {
+                      await deletePlan(p.planId);
+                      setRemotePlans((prev) => prev.filter((x) => x.planId !== p.planId));
+                    } catch (err) {
+                      console.error(err);
+                      alert("삭제 중 오류가 발생했어요.");
+                    }
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    right: 0,         // ← 왼쪽 위
+                    border: "none",
+                    background: "transparent",
+                    fontSize: 16,
+                    lineHeight: 1,
+                    cursor: "pointer",
+                    color: "#222",
+                    padding: "6px 6px",
+                    borderRadius: 6,
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            ))
+          )}
+
+          {/* 새 계획 버튼 */}
+          <div className="trip-item add-new-trip" onClick={handleNewScheduleClick}>
             +
           </div>
         </div>
       </aside>
 
       <main className="main-content">
-        {/* 🔥 검색 입력창 */}
+        {/* 검색 입력창 */}
         <div className="search-bar">
           <input
             type="text"
@@ -308,7 +354,7 @@ function DashboardPage() {
           </button>
         </div>
 
-        {/* 🔥 검색어 반영된 카드 목록 */}
+        {/* 카드 목록 */}
         <div className="destination-grid">
           {filteredDestinations.length === 0 ? (
             <div style={{ color: "#bbb", textAlign: "center", padding: 36 }}>
@@ -341,11 +387,13 @@ function DashboardPage() {
         </div>
       </main>
 
+      {/* 모달: 왼쪽 플러스는 sm, 카드 클릭은 lg */}
       <ScheduleCreationModal
         isOpen={isModalOpen}
         onClose={closeModal}
+        onCreated={onCreated}
         destination={selectedDestination}
-        imageMap={imageMap}
+        size={selectedDestination ? "lg" : "sm"}
       />
     </div>
   );
