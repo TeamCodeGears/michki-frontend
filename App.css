@@ -1,0 +1,42 @@
+/* 전역 베이스 */
+/* 홈 화면에서만 세로 스크롤 제거 */
+body.home-no-scroll {
+  overflow: hidden;
+}
+
+html, body, #root {
+  background: #FAF5EB;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  font-family: 'Noto Sans KR', 'Inter', 'Jua', 'Merriweather Sans', 'Gowun Batang', 'Phudu', Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: #213547;
+  box-sizing: border-box;
+}
+
+#root {
+  max-width: 1920px;
+  min-height: 100vh;
+  margin: 0 auto;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-layout {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+}
+
+.main-outlet {
+  flex-grow: 1;
+  position: relative;
+  overflow: visible;
+}
+
+/* ❗️여기엔 .main-text / .main-photo 절대배치 정의하지 마세요.
+   홈 전용 스타일은 HomePage.css에서 관리합니다. */

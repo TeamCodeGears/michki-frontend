@@ -1,0 +1,201 @@
+/* 오버레이: 중앙 정렬 */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(5px);
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* 모달 프레임 (폭은 인라인 style의 --modal-w로 제어) */
+.modal-content {
+  background-color: #FAF5EB;
+  padding: 30px;
+  border-radius: 20px;
+  box-shadow: 0 5px 30px rgba(0, 0, 0, 0.3);
+  max-width: 92vw;
+  min-height: 400px;
+  display: flex;
+  flex-direction: column;
+  color: #333;
+  position: relative;
+}
+
+/* 작은 모달 (플러스 버튼 전용) */
+.create-only-modal {
+  width: var(--modal-w, 350px);
+  max-width: 92vw;
+}
+
+/* 헤더 */
+.modal-header {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 15px;
+  margin-bottom: 20px;
+  position: relative;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.close-button {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  position: absolute;
+  right: 16px;
+  top: 12px;
+  line-height: 1;
+}
+
+/* 본문 */
+.modal-body {
+  display: flex;
+  gap: 0;              /* 간격 제거 */
+  flex-grow: 1;
+}
+
+/* 왼쪽 폼 고정 폭 */
+.schedule-form {
+  flex: 0 0 360px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 오른쪽 패널(이미지/목록) */
+.image-section {
+  flex: 0 0 360px;          /* 고정 폭 */
+  max-height: 60vh;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 35px;
+  margin-left: 0;
+}
+
+/* 사진 상단 보정 및 내부 정렬 래퍼 */
+.image-wrapper {
+  width: 100%;
+  margin-top: -6px;          /* 살짝 위로 끌어올림 */
+}
+
+/* 이미지: 고정 캔버스 */
+.modal-image {
+  width: 100%;
+  height: 260px;
+  object-fit: cover;
+  border-radius: 12px;
+  display: block;
+}
+
+/* 사진 아래 화폐/전압 */
+.currency-info {
+  margin-top: 12px;
+  font-size: 14px;
+  color: #555;
+  text-align: center;
+}
+
+/* 입력 폭 통일 */
+.unified-width {
+  width: 320px;
+  max-width: 100%;
+}
+
+/* 폼 요소 */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 18px;
+}
+
+.form-group label {
+  font-weight: 700;
+  font-size: 15px;
+  color: #555;
+  margin-bottom: 8px;
+}
+
+.form-group input {
+  background-color: #ffffff;
+  padding: 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 16px;
+  color: #333;
+}
+
+.form-group input[readOnly] {
+  background-color: #f0f0f0;
+  cursor: not-allowed;
+}
+
+/* 날짜 줄 */
+.date-picker-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.date-picker-wrapper.unified-width {
+  width: 320px;
+}
+
+.date-picker-wrapper .react-datepicker-wrapper input {
+  width: 132px;
+}
+
+/* 버튼도 통일 폭 */
+.create-button {
+  width: 345px;
+  padding: 14px;
+  border-radius: 10px;
+  border: none;
+  background-color: #46463C;
+  color: white;
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: auto;
+}
+
+/* 선택 리스트 */
+.selection-item {
+  font-size: 22px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 10px 20px;
+  border-radius: 8px;
+  transition: background-color 0.2s;
+}
+.selection-item:hover { background-color: #eee; }
+
+.form-placeholder {
+  flex-grow: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #aaa;
+  font-size: 18px;
+}
+
+/* 반응형 */
+@media (max-width: 780px) {
+  .modal-content { width: 94vw; }
+  .modal-body { flex-direction: column; }
+  .image-section, .selection-panel { width: 100%; max-height: 40vh; }
+  .unified-width, .date-picker-wrapper.unified-width { width: 100%; }
+  .create-button { width: 100%; }
+  .modal-image { height: 200px; }
+}
