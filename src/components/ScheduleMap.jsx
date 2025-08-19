@@ -39,8 +39,14 @@ import { LanguageContext } from "../context/LanguageContext";
 import { texts as allTexts } from "../data/translations";
 import CustomInfoWindow from "./CustomInfoWindow";
 
-import { createPlace, updatePlace } from "../api/place";
-import { leavePlan } from "../api/plans"; // ✅ 방 나가기
+import {
+  createPlace,
+  updatePlace,
+  deletePlace,
+  reorderPlaces,
+  listPlaces,
+} from "../api/place";
+import { leavePlan } from "../api/plans"; // 그대로 사용
 
 const API_BASE = import.meta.env.VITE_API_BASE;
 
@@ -50,6 +56,9 @@ const GOOGLE_MAPS_LIBRARIES = ["places"];
 
 const containerStyle = { width: "100%", height: "100vh" };
 const center = { lat: 43.0687, lng: 141.3508 };
+
+// ✅ 로컬스토리지 키
+const lsKey = (roomKey) => `pins:${roomKey}`;
 
 function ScheduleMap() {
   const location = useLocation();
@@ -93,6 +102,8 @@ function ScheduleMap() {
   const [title, setTitle] = useState("여행");
   const [dateRange, setDateRange] = useState([null, null]);
   const [showDatePicker, setShowDatePicker] = useState(false);
+
+  // pin 공통 포맷: { id, name, address, photo, position:{lat,lng}, order, comment, googlePlaceId? }
   const [pinsByDay, setPinsByDay] = useState([[]]);
   const [selectedDayIdx, setSelectedDayIdx] = useState(0);
   const [showDayDropdown, setShowDayDropdown] = useState(false);
@@ -115,6 +126,7 @@ function ScheduleMap() {
   const [showPath, setShowPath] = useState(true);
 
   const [isLeaving, setIsLeaving] = useState(false);
+  const [isLoadingPins, setIsLoadingPins] = useState(false);
 
   // 목적지 주소로 자동 이동
   useEffect(() => {
@@ -143,7 +155,7 @@ function ScheduleMap() {
     if (destination) setSearchInput(destination);
   }, [incomingTitle, incomingStart, incomingEnd, destination]);
 
-  // URL만으로 진입 시 백엔드에서 플랜 조회
+  // URL로 진입 시 플랜 기본 정보(제목/기간) 로드
   useEffect(() => {
     const needsFetch = planId && !(incomingTitle && incomingStart && incomingEnd);
     if (!needsFetch) return;
@@ -183,24 +195,93 @@ function ScheduleMap() {
     selectedDayIdxRef.current = selectedDayIdx;
   }, [selectedDayIdx]);
 
+  const [startDate, endDate] = dateRange;
+  const daysArr = getDaysArr(startDate, endDate);
   const pins = pinsByDay[selectedDayIdx] || [];
 
-  // 날짜 변경 시 일수만큼 배열 길이 보정
+  // 날짜 변경 시 일수 보정
   useEffect(() => {
-    const [start, end] = dateRange;
-    if (!start || !end) {
+    if (!startDate || !endDate) {
       setPinsByDay([[]]);
       setSelectedDayIdx(0);
       return;
     }
-    const daysArr = getDaysArr(start, end);
     setPinsByDay((prev) =>
       prev.length === daysArr.length
         ? prev
         : Array.from({ length: daysArr.length }, (_, i) => prev[i] || [])
     );
     setSelectedDayIdx((idx) => (idx < daysArr.length ? idx : 0));
-  }, [dateRange[0], dateRange[1]]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startDate, endDate]);
+
+  // ✅ 핀 로드: planId 있으면 서버, 없으면 localStorage
+  useEffect(() => {
+    const loadPins = async () => {
+      if (!startDate || !endDate) return;
+
+      const blank = Array.from({ length: daysArr.length }, () => []);
+      setIsLoadingPins(true);
+      try {
+        if (planId) {
+          const serverPins = await listPlaces(planId);
+          const groups = daysArr.map(() => []);
+          serverPins
+            .sort(
+              (a, b) =>
+                (a.travelDate || "").localeCompare(b.travelDate || "") ||
+                (a.orderInDay ?? 0) - (b.orderInDay ?? 0)
+            )
+            .forEach((p) => {
+              const idx = daysArr.findIndex(
+                (d) =>
+                  d.toISOString().slice(0, 10) ===
+                  (p.travelDate || "").slice(0, 10)
+              );
+              if (idx >= 0) {
+                groups[idx].push({
+                  id: p.id, // 서버 id
+                  name: p.name || "장소",
+                  address: p.description || "",
+                  photo: null,
+                  position: { lat: p.latitude, lng: p.longitude },
+                  order: p.orderInDay ?? groups[idx].length + 1,
+                  comment: p.description || "",
+                  googlePlaceId: p.googlePlaceId || "",
+                });
+              }
+            });
+          setPinsByDay(groups);
+        } else {
+          const raw = localStorage.getItem(lsKey(roomKey));
+          if (!raw) {
+            setPinsByDay(blank);
+          } else {
+            const parsed = JSON.parse(raw);
+            const adjusted = Array.from(
+              { length: daysArr.length },
+              (_, i) => parsed[i] || []
+            );
+            setPinsByDay(adjusted);
+          }
+        }
+      } catch (e) {
+        console.error("핀 로드 실패:", e);
+        setPinsByDay(blank);
+      } finally {
+        setIsLoadingPins(false);
+      }
+    };
+    loadPins();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planId, roomKey, startDate, endDate]);
+
+  // ✅ planId 없으면 자동 로컬 저장
+  useEffect(() => {
+    if (!startDate || !endDate) return;
+    if (planId) return;
+    localStorage.setItem(lsKey(roomKey), JSON.stringify(pinsByDay));
+  }, [pinsByDay, planId, roomKey, startDate, endDate]);
 
   // Polyline 토글
   const polylineRef = useRef(null);
@@ -253,6 +334,7 @@ function ScheduleMap() {
             "user_ratings_total",
             "types",
             "formatted_phone_number",
+            "place_id",
           ],
         },
         (place, status) => {
@@ -260,7 +342,7 @@ function ScheduleMap() {
             setInfoWindow({
               position: toLatLngObj(place.geometry.location),
               info: {
-                placeId: e.placeId,
+                placeId: place.place_id,
                 name: place.name,
                 address: place.formatted_address,
                 photo: place.photos?.[0]?.getUrl() ?? null,
@@ -274,37 +356,75 @@ function ScheduleMap() {
       );
     });
 
-    // 우클릭 → 자유 핀 추가
-    rightClickListenerRef.current = map.addListener("rightclick", (e) => {
-      const latLng = e.latLng;
-      if (!latLng) return;
-      setPinsByDay((prev) =>
-        prev.map((pins, idx) =>
-          idx === selectedDayIdxRef.current
-            ? [
-                ...pins,
-                {
-                  id: Date.now(),
-                  name: "직접 지정한 위치",
-                  address: `위도: ${latLng.lat().toFixed(5)}, 경도: ${latLng
-                    .lng()
-                    .toFixed(5)}`,
-                  photo: null,
-                  position: { lat: latLng.lat(), lng: latLng.lng() },
-                  order: pins.length + 1,
-                  comment: "",
-                },
-              ]
-            : pins
-        )
-      );
-    });
+    // 우클릭 → 자유 핀 추가 (서버/로컬 동시 대응)
+    rightClickListenerRef.current = map.addListener(
+      "rightclick",
+      async (e) => {
+        const latLng = e.latLng;
+        if (!latLng) return;
+
+        const [sd, ed] = dateRange;
+        if (!sd || !ed) {
+          alert("먼저 여행 날짜를 선택하세요.");
+          return;
+        }
+        const days = getDaysArr(sd, ed);
+        const travelDate = days[selectedDayIdxRef.current]
+          .toISOString()
+          .slice(0, 10);
+
+        const basePin = {
+          name: "직접 지정한 위치",
+          address: `위도: ${latLng.lat().toFixed(5)}, 경도: ${latLng
+            .lng()
+            .toFixed(5)}`,
+          photo: null,
+          position: { lat: latLng.lat(), lng: latLng.lng() },
+          order: (pinsByDay[selectedDayIdxRef.current]?.length || 0) + 1,
+          comment: "",
+          googlePlaceId: "",
+        };
+
+        if (planId) {
+          try {
+            const saved = await createPlace(planId, {
+              name: basePin.name,
+              description: basePin.address,
+              latitude: basePin.position.lat,
+              longitude: basePin.position.lng,
+              googlePlaceId: "",
+              travelDate,
+              orderInDay: basePin.order,
+            });
+            const serverId = saved?.id ?? Date.now();
+            setPinsByDay((prev) =>
+              prev.map((arr, idx) =>
+                idx === selectedDayIdxRef.current
+                  ? [...arr, { ...basePin, id: serverId }]
+                  : arr
+              )
+            );
+          } catch (err) {
+            console.error("자유핀 저장 실패:", err);
+            alert("자유 핀 저장 실패: " + err.message);
+          }
+        } else {
+          const localId = Date.now();
+          setPinsByDay((prev) =>
+            prev.map((arr, idx) =>
+              idx === selectedDayIdxRef.current
+                ? [...arr, { ...basePin, id: localId }]
+                : arr
+            )
+          );
+        }
+      }
+    );
   };
 
   // 주변 탐색 실행
   const handleNearbySearch = (type) => {
     if (activeCategory === type) {
-      // 동일 카테고리 다시 클릭 → 토글 해제
       setActiveCategory(null);
       setNearbyMarkers([]);
       setShowCategoryList(false);
@@ -352,6 +472,7 @@ function ScheduleMap() {
           "user_ratings_total",
           "types",
           "formatted_phone_number",
+          "place_id",
         ],
       },
       (result, status) => {
@@ -362,6 +483,7 @@ function ScheduleMap() {
               lng: result.geometry.location.lng(),
             },
             info: {
+              placeId: result.place_id,
               name: result.name,
               address: result.formatted_address,
               photo: result.photos?.[0]?.getUrl() ?? null,
@@ -375,69 +497,78 @@ function ScheduleMap() {
     );
   };
 
-  // 핀 추가 (서버 저장 포함)
+  // 핀 추가 (정보창/검색창에서)
   const handleAddPin = async () => {
     if (!infoWindow && !searchResult) return;
+    if (!startDate || !endDate) {
+      alert("먼저 여행 날짜를 선택하세요.");
+      return;
+    }
     const data = infoWindow || searchResult;
     const position = toLatLngObj(data.position);
+    const days = getDaysArr(startDate, endDate);
+    const travelDate = days[selectedDayIdx].toISOString().slice(0, 10);
 
-    const [startDate, endDate] = dateRange;
-    const daysArr = getDaysArr(startDate, endDate);
-    const travelDate = daysArr[selectedDayIdx].toISOString().split("T")[0];
-
-    const accessToken = localStorage.getItem("accessToken");
+    const basePin = {
+      name: data.info.name || "장소",
+      address: data.info.address || "",
+      photo: data.info.photo ?? null,
+      position,
+      order: pins.length + 1,
+      comment: "",
+      googlePlaceId: data.info.placeId || "",
+    };
 
     try {
       if (planId) {
-        await createPlace(
-          planId,
-          {
-            name: data.info.name || "장소",
-            description: data.info.address || "",
-            latitude: position.lat,
-            longitude: position.lng,
-            googlePlaceId: data.info.placeId || "",
-            travelDate,
-            orderInDay: pins.length + 1,
-          },
-          accessToken
+        const saved = await createPlace(planId, {
+          name: basePin.name,
+          description: basePin.address,
+          latitude: position.lat,
+          longitude: position.lng,
+          googlePlaceId: basePin.googlePlaceId,
+          travelDate,
+          orderInDay: basePin.order,
+        });
+        const serverId = saved?.id ?? Date.now();
+        setPinsByDay((prev) =>
+          prev.map((arr, idx) =>
+            idx === selectedDayIdx ? [...arr, { ...basePin, id: serverId }] : arr
+          )
+        );
+      } else {
+        const localId = Date.now();
+        setPinsByDay((prev) =>
+          prev.map((arr, idx) =>
+            idx === selectedDayIdx ? [...arr, { ...basePin, id: localId }] : arr
+          )
         );
       }
-
-      setPinsByDay((prev) =>
-        prev.map((arr, idx) =>
-          idx === selectedDayIdx
-            ? [
-                ...arr,
-                {
-                  id: Date.now(),
-                  ...data.info,
-                  position,
-                  order: pins.length + 1,
-                  comment: "",
-                },
-              ]
-            : arr
-        )
-      );
     } catch (err) {
       console.error(err);
       alert("장소 등록 실패: " + err.message);
+    } finally {
+      setInfoWindow(null);
+      setSearchResult(null);
+      setSearchInput("");
     }
-
-    setInfoWindow(null);
-    setSearchResult(null);
-    setSearchInput("");
   };
 
   // 핀 삭제
-  const handleDeletePin = (id) => {
+  const handleDeletePin = async (id) => {
+    if (planId) {
+      try {
+        await deletePlace(planId, id);
+      } catch (e) {
+        console.error("서버 삭제 실패:", e);
+        alert("삭제 실패: " + e.message);
+        // 실패 시 화면 반영 취소하려면 return; 추가
+      }
+    }
     setPinsByDay((prev) =>
       prev.map((arr, idx) =>
         idx === selectedDayIdx
-          ? arr
-              .filter((p) => p.id !== id)
-              .map((p, i) => ({ ...p, order: i + 1 }))
+          ? arr.filter((p) => p.id !== id).map((p, i) => ({ ...p, order: i + 1 }))
           : arr
       )
     );
@@ -481,7 +612,7 @@ function ScheduleMap() {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
-  const handleDragEnd = ({ active, over }) => {
+  const handleDragEnd = async ({ active, over }) => {
     if (!over || active.id === over.id) return;
     const oldIndex = pins.findIndex((p) => String(p.id) === String(active.id));
     const newIndex = pins.findIndex((p) => String(p.id) === String(over.id));
@@ -492,12 +623,27 @@ function ScheduleMap() {
     setPinsByDay((prev) =>
       prev.map((arr, idx) => (idx === selectedDayIdx ? newOrder : arr))
     );
+
+    // ✅ 서버 순서 재정렬
+    try {
+      if (planId) {
+        const dayDate = getDaysArr(startDate, endDate)
+          [selectedDayIdx].toISOString()
+          .slice(0, 10);
+        const payload = newOrder.map((p) => ({
+          placeId: p.id,
+          orderInDay: p.order,
+          travelDate: dayDate,
+        }));
+        await reorderPlaces(planId, payload);
+      }
+    } catch (e) {
+      console.error("reorder 실패:", e);
+      // 필요 시 되돌리기 로직 추가 가능
+    }
   };
 
   if (!isLoaded) return <div>Loading...</div>;
-
-  const [startDate, endDate] = dateRange;
-  const daysArr = getDaysArr(startDate, endDate);
 
   return (
     <div style={{ display: "flex", height: "100vh", background: "#fffbe5" }}>
@@ -587,7 +733,7 @@ function ScheduleMap() {
             {showPath ? texts.pathOn : texts.pathOff}
           </button>
 
-          {/* ✅ 방 나가기 */}
+          {/* 방 나가기 */}
           <button
             type="button"
             disabled={!planId || isLeaving}
@@ -724,10 +870,9 @@ function ScheduleMap() {
               {(() => {
                 const d = daysArr[selectedDayIdx];
                 const weekday = texts.weekdays[d.getDay()];
-                const mmdd = `${String(d.getMonth() + 1).padStart(
-                  2,
-                  "0"
-                )}.${String(d.getDate()).padStart(2, "0")}`;
+                const mmdd = `${String(d.getMonth() + 1).padStart(2, "0")}.${String(
+                  d.getDate()
+                ).padStart(2, "0")}`;
                 return `${mmdd} (${weekday}) ▼`;
               })()}
             </button>
@@ -800,11 +945,7 @@ function ScheduleMap() {
             width: "100%",
           }}
         >
-          <Autocomplete
-            onLoad={onLoadAutocomplete}
-            onPlaceChanged={onPlaceChanged}
-            style={{ width: "100%" }}
-          >
+          <Autocomplete onLoad={onLoadAutocomplete} onPlaceChanged={onPlaceChanged}>
             <input
               type="text"
               value={searchInput}
@@ -827,7 +968,7 @@ function ScheduleMap() {
           </Autocomplete>
         </form>
 
-        {/* ✅ 주변 장소 탐색 결과 리스트 */}
+        {/* 주변 장소 탐색 결과 리스트 */}
         {showCategoryList && nearbyMarkers.length > 0 && (
           <div
             style={{
@@ -923,6 +1064,10 @@ function ScheduleMap() {
         )}
 
         {/* 핀 리스트 (DnD) */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          {isLoadingPins && <span style={{ color: "#FAF5EB" }}>불러오는 중…</span>}
+        </div>
+
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -1020,34 +1165,29 @@ function ScheduleMap() {
           open={modalOpen}
           onClose={handleModalClose}
           onCommentChange={async (comment) => {
+            // 화면 즉시 반영
             setPinsByDay((arr) =>
               arr.map((pins, idx) =>
                 idx !== selectedDayIdx
                   ? pins
                   : pins.map((p) =>
-                      p.id === selectedPin.id ? { ...p, comment } : p
+                      p.id === selectedPin.id ? { ...p, comment, address: comment } : p
                     )
               )
             );
-            setSelectedPin((p) => ({ ...p, comment }));
+            setSelectedPin((p) => ({ ...p, comment, address: comment }));
 
+            // 서버 반영
             try {
-              const accessToken = localStorage.getItem("accessToken");
-              if (!accessToken) throw new Error("로그인이 필요합니다");
-              const position = selectedPin.position;
               if (planId) {
-                await updatePlace(
-                  planId,
-                  {
-                    placeId: selectedPin.placeId,
-                    name: selectedPin.name || "장소",
-                    description: comment,
-                    latitude: position.lat,
-                    longitude: position.lng,
-                    googlePlaceId: selectedPin.placeId || "",
-                  },
-                  accessToken
-                );
+                const position = selectedPin.position;
+                await updatePlace(planId, selectedPin.id, {
+                  name: selectedPin.name || "장소",
+                  description: comment, // 메모 = 설명
+                  latitude: position.lat,
+                  longitude: position.lng,
+                  googlePlaceId: selectedPin.googlePlaceId || "",
+                });
               }
             } catch (err) {
               console.error("메모 수정 실패:", err);

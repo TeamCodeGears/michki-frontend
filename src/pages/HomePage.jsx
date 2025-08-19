@@ -1,7 +1,7 @@
 import React, { useContext, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import LoginButton from '../components/LoginButton';
-import homeImage from '../assets/tokyo.jpg'; // snow.png로 교체!
+import homeImage from '../assets/tokyo.jpg'; 
 import { LanguageContext } from '../context/LanguageContext';
 import './HomePage.css';
 
