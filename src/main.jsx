@@ -17,7 +17,7 @@ import TermsPage from "./pages/TermsPage.jsx";
 import PrivacyPage from "./pages/PrivacyPage.jsx";
 import Schedule from "./pages/Schedule.jsx";
 import { LanguageProvider } from "./context/LanguageContext";
-
+import ShareGate from "./routes/ShareGate.jsx";
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 // 에러 화면

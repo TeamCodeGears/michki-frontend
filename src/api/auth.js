@@ -1,27 +1,32 @@
-import http from "./http";
+// src/api/auth.js
+import http, { raw } from "./http";
 
-// 백엔드: POST /member/google/login (idToken 전달 형식은 현재 구현과 동일하게 맞춰주세요)
-export const googleLogin = async (payload) => {
-  const res = await http.post("/member/google/login", payload);
-  return res.data; // {accessToken, refreshToken, user: {...}} 형태라고 가정
-};
+export async function loginWithGoogle(code) {
+  // 서버가 { code }를 받음 (Swagger)
+  const { data } = await raw.post("/member/google/login", { code });
+  const accessToken  = data?.accessToken ?? data?.token ?? data?.access ?? null;
+  const refreshToken = data?.refreshToken ?? data?.refresh ?? null;
+  if (accessToken)  localStorage.setItem("accessToken", accessToken);
+  if (refreshToken) localStorage.setItem("refreshToken", refreshToken);
+  if (data?.user)    localStorage.setItem("user", JSON.stringify(data.user));
+  return data;
+}
 
-export const logout = async () => {
+export async function logout() {
+  try { await http.post("/member/logout"); } catch {}
   try {
-    await http.post("/member/logout");
-  } finally {
     localStorage.removeItem("accessToken");
     localStorage.removeItem("refreshToken");
     localStorage.removeItem("user");
-  }
-};
+  } catch {}
+}
 
-export const withdraw = async () => {
-  try {
-    await http.post("/member/withdraw");
-  } finally {
-    localStorage.removeItem("accessToken");
-    localStorage.removeItem("refreshToken");
-    localStorage.removeItem("user");
+export async function withdraw() {
+  try { await http.post("/member/withdraw"); } finally {
+    try {
+      localStorage.removeItem("accessToken");
+      localStorage.removeItem("refreshToken");
+      localStorage.removeItem("user");
+    } catch {}
   }
-};
+}

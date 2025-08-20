@@ -42,6 +42,7 @@ export const texts = {
     create: "생성", 
     notSchedule: "올해 계획이 없어요.",
     FailedCreate: "생성에 실패하였습니다.",
+    outRoom: "방나가기",
 
     
     myTrips: [
@@ -132,6 +133,7 @@ export const texts = {
     create: "生成",  
     notSchedule: "今年は計画がありません。",
     FailedCreate: "作成に失敗しました。",
+    outRoom: "部屋を出る",
 
     myTrips: [
       { name: '私の旅行 1', date: '2025/07/01 ~ 2025/07/05' },

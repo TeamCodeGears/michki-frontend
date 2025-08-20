@@ -1,4 +1,3 @@
-// src/App.jsx
 import { useEffect, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import "./App.css";
@@ -10,6 +9,7 @@ import AvatarDock from "./components/AvatarDock";
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState(null);
+  const [bootstrapped, setBootstrapped] = useState(false);
 
   useEffect(() => {
     try {
@@ -21,16 +21,17 @@ function App() {
       }
     } catch (e) {
       console.error("restore failed", e);
+    } finally {
+      setBootstrapped(true);
     }
   }, []);
 
   const location = useLocation();
-
-  // /schedule 하위에서는 Footer/AvatarDock 숨김
   const hideOnSchedule = location.pathname.startsWith("/schedule");
-
-  // /dashboard 에서는 상단 로고 숨김
   const hideLogoOnDashboard = location.pathname.startsWith("/dashboard");
+
+  // 부트스트랩 전엔 렌더 막기 (깜빡임 방지)
+  if (!bootstrapped) return null;
 
   return (
     <div className="app-layout">
@@ -38,7 +39,8 @@ function App() {
       <LanguageButton />
 
       <main className="main-outlet">
-        <Outlet context={{ isLoggedIn, setIsLoggedIn, user, setUser }} />
+        {/* 🔑 모든 자식에서 useOutletContext()로 user/isLoggedIn 사용 */}
+        <Outlet context={{ isLoggedIn, setIsLoggedIn, user, setUser, bootstrapped }} />
       </main>
 
       {!hideOnSchedule && <Footer />}

@@ -1,15 +1,24 @@
 // src/components/AvatarDock.jsx
-import React, {useContext} from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useContext, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { LanguageContext } from "../context/LanguageContext";
+import { getAvatarBorderColor } from "../utils/avatarColor";
 
 export default function AvatarDock({ user, isLoggedIn, setIsLoggedIn, setUser }) {
   if (!isLoggedIn) return null;
 
   const navigate = useNavigate();
+  const { planId } = useParams();
   const { texts } = useContext(LanguageContext);
+
   const name = user?.name || "";
   const picture = user?.picture || "";
+  const borderColor = getAvatarBorderColor(planId) || "#e9e9e9";
+
+  // 이미지 실패 시 이니셜로 폴백
+  const [imgFailed, setImgFailed] = useState(false);
+  const showImage = picture && !imgFailed;
+  const initial = (name?.[0] || "U").toUpperCase();
 
   const handleLogout = () => {
     try {
@@ -34,7 +43,7 @@ export default function AvatarDock({ user, isLoggedIn, setIsLoggedIn, setUser })
         gap: 10,
         padding: "8px 10px",
         background: "rgba(255,255,255,0.95)",
-        borderRadius: 12,                           // ← 여기만 줄이면 사각형 느낌
+        borderRadius: 12,
         boxShadow: "0 6px 18px rgba(0,0,0,0.15)",
         border: "1px solid rgba(0,0,0,0.06)",
         backdropFilter: "blur(6px)",
@@ -46,22 +55,36 @@ export default function AvatarDock({ user, isLoggedIn, setIsLoggedIn, setUser })
         style={{
           width: 40,
           height: 40,
-          borderRadius: "50%",                      // 아바타는 동그랗게 유지
+          borderRadius: "50%",
           overflow: "hidden",
           background: "#eee",
           display: "grid",
           placeItems: "center",
           fontWeight: 700,
+          border: `3px solid ${borderColor}`,
+          boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
+          position: "relative",
         }}
       >
-        {picture ? (
+        {showImage ? (
           <img
             src={picture}
             alt={name || "user"}
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              display: "block",
+            }}
+            referrerPolicy="no-referrer"   // ← 구글 프로필 이미지 로딩 안정화
+            decoding="async"
+            loading="lazy"
+            onError={() => setImgFailed(true)} // ← 실패 시 이니셜 폴백
           />
         ) : (
-          <span style={{ color: "#666" }}>{name ? name[0].toUpperCase() : "U"}</span>
+          <span style={{ color: "#666" }}>{initial}</span>
         )}
       </div>
 
@@ -77,7 +100,7 @@ export default function AvatarDock({ user, isLoggedIn, setIsLoggedIn, setUser })
           color: "#333",
           background: "#fff",
           border: "1px solid rgba(0,0,0,0.12)",
-          borderRadius: 8,                           // ← 버튼도 덜 둥글게
+          borderRadius: 8,
           cursor: "pointer",
           boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
         }}

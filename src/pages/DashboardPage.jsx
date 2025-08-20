@@ -1,4 +1,5 @@
-import { useEffect, useState, useContext } from "react";
+// src/pages/DashboardPage.jsx
+import { useEffect, useState, useContext, useMemo } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import "./DashboardPage.css";
 import YearSelector from "../components/YearSelector";
@@ -7,6 +8,7 @@ import { LanguageContext } from "../context/LanguageContext";
 import { texts as allTexts } from "../data/translations";
 import { listPlans, deletePlan } from "../api/plans";
 
+// (생략 없는 이미지 임포트들 그대로 유지)
 import osakaImage1 from "../assets/Osaka1.webp";
 import osakaImage2 from "../assets/Osaka2.webp";
 import osakaImage3 from "../assets/Osaka3.webp";
@@ -71,8 +73,7 @@ import hiroshimaImage1 from "../assets/Hiroshima1.webp";
 import hiroshimaImage2 from "../assets/Hiroshima2.webp";
 import hiroshimaImage3 from "../assets/Hiroshima3.webp";
 import hiroshimaImage4 from "../assets/Hiroshima4.webp";
-
-// 한국 도시 이미지 임포트
+// Korea
 import seoulImage1 from "../assets/Seoul1.webp";
 import seoulImage2 from "../assets/Seoul2.webp";
 import seoulImage3 from "../assets/Seoul3.webp";
@@ -138,9 +139,7 @@ import chuncheonImage2 from "../assets/Chuncheon2.webp";
 import chuncheonImage3 from "../assets/Chuncheon3.webp";
 import chuncheonImage4 from "../assets/Chuncheon4.webp";
 
-// 이미지 맵
 const imageMap = {
-  // Japan
   Osaka: [osakaImage1, osakaImage2, osakaImage3, osakaImage4],
   Tokyo: [tokyoImage1, tokyoImage2, tokyoImage3, tokyoImage4],
   Sapporo: [sapporoImage1, sapporoImage2, sapporoImage3, sapporoImage4],
@@ -157,7 +156,6 @@ const imageMap = {
   Yokohama: [yokohamaImage1, yokohamaImage2, yokohamaImage3, yokohamaImage4],
   Fukuoka: [fukuokaImage1, fukuokaImage2, fukuokaImage3, fukuokaImage4],
   Hiroshima: [hiroshimaImage1, hiroshimaImage2, hiroshimaImage3, hiroshimaImage4],
-  // Korea
   Seoul: [seoulImage1, seoulImage2, seoulImage3, seoulImage4],
   Busan: [busanImage1, busanImage2, busanImage3, busanImage4],
   "Jeju Island": [jejuImage1, jejuImage2, jejuImage3, jejuImage4],
@@ -178,7 +176,7 @@ const imageMap = {
 
 function DashboardPage() {
   const navigate = useNavigate();
-  const { isLoggedIn } = useOutletContext();
+  const { isLoggedIn, bootstrapped } = useOutletContext();   // ★ bootstrapped 함께 받기
   const { language } = useContext(LanguageContext);
   const texts = allTexts[language];
 
@@ -190,18 +188,18 @@ function DashboardPage() {
   const [year, setYear] = useState(new Date().getFullYear());
   const [remotePlans, setRemotePlans] = useState([]);
 
+  // ★ 복원이 끝난 뒤에만 리다이렉트 판단
   useEffect(() => {
-    if (!isLoggedIn) {
+    if (bootstrapped && !isLoggedIn) {
       navigate("/", { replace: true });
-      return;
     }
-  }, [isLoggedIn, navigate]);
+  }, [bootstrapped, isLoggedIn, navigate]);
 
   useEffect(() => {
     (async () => {
       try {
         const data = await listPlans(year);
-        setRemotePlans(data);
+        setRemotePlans(Array.isArray(data) ? data : []);
       } catch (e) {
         console.error("plans fetch failed", e);
       }
@@ -209,16 +207,16 @@ function DashboardPage() {
   }, [year]);
 
   const handleCardClick = (destinationData) => {
+    const imgs = imageMap[destinationData.engName] || [];
     const destinationWithImages = {
       ...destinationData,
-      image: imageMap[destinationData.engName][0],
-      slideshowImages: imageMap[destinationData.engName],
+      image: imgs[0] || null,
+      slideshowImages: imgs,
     };
     setSelectedDestination(destinationWithImages);
     setIsModalOpen(true);
   };
 
-  // 왼쪽 “+” → 작은 모달
   const handleNewScheduleClick = () => {
     setSelectedDestination(null);
     setIsModalOpen(true);
@@ -230,28 +228,38 @@ function DashboardPage() {
   };
 
   const onCreated = () => {
-    listPlans(year).then(setRemotePlans).catch(console.error);
+    listPlans(year).then((d) => setRemotePlans(Array.isArray(d) ? d : []))
+                   .catch(console.error);
   };
 
-  const filteredDestinations = texts.destinations[activeTab].filter(
-    (dest) =>
-      dest.name.includes(searchInput) ||
-      dest.engName.toLowerCase().includes(searchInput.toLowerCase())
-  );
+  // 안전 가드(번역/탭 로딩 전)
+  const destinations = texts?.destinations?.[activeTab] ?? [];
+  const filteredDestinations = useMemo(() => {
+    const q = searchInput.trim().toLowerCase();
+    if (!q) return destinations;
+    return destinations.filter(
+      (dest) =>
+        dest.name.toLowerCase().includes(q) ||
+        dest.engName.toLowerCase().includes(q)
+    );
+  }, [destinations, searchInput]);
 
   return (
     <div className="dashboard-container">
       <aside className="sidebar">
         <div className="sidebar-top" style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div className="year-wrap">
-            <YearSelector value={year} onChange={(y) => setYear(Number(String(y).match(/\d{4}/)?.[0]))} />
+            <YearSelector
+              value={year}
+              onChange={(y) => setYear(Number(String(y).match(/\d{4}/)?.[0]))}
+            />
           </div>
         </div>
 
         <div className="trip-list" style={{ marginTop: 12 }}>
           {remotePlans.length === 0 ? (
             <div className="trip-item" style={{ justifyContent: "center" }}>
-              {texts.notSchedule}
+              {texts?.notSchedule ?? "등록된 일정이 없습니다."}
             </div>
           ) : (
             remotePlans.map((p) => (
@@ -261,8 +269,8 @@ function DashboardPage() {
                 onClick={() => navigate(`/schedule/${p.planId}`)}
                 style={{
                   cursor: "pointer",
-                  position: "relative", // X 버튼 기준점
-                  paddingLeft: 28,       // 왼쪽 위 버튼 자리 확보
+                  position: "relative",
+                  paddingRight: 28, // 오른쪽 X 버튼 자리
                 }}
               >
                 <span className="trip-name">{p.title}</span>
@@ -270,7 +278,7 @@ function DashboardPage() {
                   {p.startDate} ~ {p.endDate}
                 </span>
 
-                {/* 삭제 버튼: 카드 안 '왼쪽 위' 고정 */}
+                {/* 삭제 버튼: 카드 '오른쪽 위' 고정 */}
                 <button
                   aria-label="일정 삭제"
                   title="일정 삭제"
@@ -290,7 +298,7 @@ function DashboardPage() {
                   style={{
                     position: "absolute",
                     top: 0,
-                    right: 0,         // ← 왼쪽 위
+                    right: 0,
                     border: "none",
                     background: "transparent",
                     fontSize: 16,
@@ -319,7 +327,7 @@ function DashboardPage() {
         <div className="search-bar">
           <input
             type="text"
-            placeholder={texts.searchPlaceholder}
+            placeholder={texts?.searchPlaceholder ?? "어디로 떠날까요?"}
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             style={{
@@ -344,45 +352,52 @@ function DashboardPage() {
             className={`tab-item ${activeTab === "japan" ? "active" : ""}`}
             onClick={() => { setActiveTab("japan"); setSearchInput(""); }}
           >
-            {texts.tabJapan}
+            {texts?.tabJapan ?? "일본"}
           </button>
           <button
             className={`tab-item ${activeTab === "korea" ? "active" : ""}`}
             onClick={() => { setActiveTab("korea"); setSearchInput(""); }}
           >
-            {texts.tabKorea}
+            {texts?.tabKorea ?? "한국"}
           </button>
         </div>
 
         {/* 카드 목록 */}
         <div className="destination-grid">
           {filteredDestinations.length === 0 ? (
-            <div style={{ color: "#bbb", textAlign: "center", padding: 36 }}>
-              검색 결과가 없습니다.
+            <div style={{ color: "#bbb", textAlign: "center", padding: 36, }}>
+            검색 결과가 없습니다.
             </div>
           ) : (
-            filteredDestinations.map((dest) => (
-              <div
-                key={dest.name}
-                className="destination-card"
-                onClick={() => handleCardClick(dest)}
-                style={{
-                  cursor: "pointer",
-                  border: "1.5px solid #ece3d6",
-                  borderRadius: 14,
-                  overflow: "hidden",
-                  background: "#fff",
-                }}
-              >
-                <img
-                  src={imageMap[dest.engName][0]}
-                  alt={dest.name}
-                  style={{ width: "100%", height: 170, objectFit: "cover" }}
-                />
-                <div className="card-title" style={{ fontWeight: 700, fontSize: 19 }}>{dest.name}</div>
-                <div className="card-subtitle" style={{ color: "#888", fontSize: 15 }}>{dest.engName}</div>
-              </div>
-            ))
+            filteredDestinations.map((dest) => {
+              const imgs = imageMap[dest.engName] || [];
+              const firstImg = imgs[0] || "";
+              return (
+                <div
+                  key={dest.name}
+                  className="destination-card"
+                  onClick={() => handleCardClick(dest)}
+                  style={{
+                    cursor: "pointer",
+                    border: "1.5px solid #ece3d6",
+                    borderRadius: 14,
+                    overflow: "hidden",
+                    background: "#fff",
+                  }}
+                >
+                  {firstImg && (
+                    <img
+                      src={firstImg}
+                      alt={dest.name}
+                      style={{ width: "100%", height: 170, objectFit: "cover" }}
+                      loading="lazy"
+                    />
+                  )}
+                  <div className="card-title" style={{ fontWeight: 700, fontSize: 19 }}>{dest.name}</div>
+                  <div className="card-subtitle" style={{ color: "#888", fontSize: 15 }}>{dest.engName}</div>
+                </div>
+              );
+            })
           )}
         </div>
       </main>
