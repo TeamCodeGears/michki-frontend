@@ -20,6 +20,8 @@ import CustomInfoWindow from "./CustomInfoWindow";
 
 import { createPlace, updatePlace, deletePlace, reorderPlaces, listPlaces } from "../api/place";
 import { leavePlan } from "../api/plans";
+import InlineLoginFab from "./InlineLoginFab";
+import CursorLayer from "./cursor/CursorLayer";
 
 const ymd = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -61,10 +63,26 @@ function setCachedPhoto(placeId, url) {
   } catch {}
 }
 
+// LatLngLiteral 혹은 google.maps.LatLng 모두 처리
+function toPlainLatLng(locationObj) {
+  if (!locationObj) return null;
+  const lat = typeof locationObj.lat === "function" ? locationObj.lat() : locationObj.lat;
+  const lng = typeof locationObj.lng === "function" ? locationObj.lng() : locationObj.lng;
+  if (typeof lat !== "number" || typeof lng !== "number") return null;
+  return { lat, lng };
+}
+
+// 안전한 날짜 포맷터
+const formatKDate = (d) => {
+  if (!(d instanceof Date) || isNaN(d)) return "날짜 미지정";
+  return d.toLocaleDateString("ko-KR").replace(/\./g, ".").replace(/\s/g, "");
+};
+
 function ScheduleMap() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user } = useOutletContext();
+  // ✅ App에서 내려준 컨텍스트만 사용
+  const { user, isLoggedIn, setIsLoggedIn, setUser } = useOutletContext() || {};
   const { planId: planIdFromParam } = useParams();
 
   const {
@@ -74,8 +92,13 @@ function ScheduleMap() {
     endDate: incomingEnd,
     planId: planIdFromState,
   } = location.state || {};
+
+  // 쿼리 파라미터
   const searchParams = new URLSearchParams(location.search);
   const planIdFromQuery = searchParams.get("planId") || undefined;
+  const sdFromQuery = searchParams.get("sd");
+  const edFromQuery = searchParams.get("ed");
+  const titleFromQuery = searchParams.get("t");
 
   const planId = planIdFromParam || planIdFromState || planIdFromQuery || undefined;
   const roomKey = useMemo(
@@ -124,41 +147,54 @@ function ScheduleMap() {
   const [isLeaving, setIsLeaving] = useState(false);
   const [isLoadingPins, setIsLoadingPins] = useState(false);
 
+  const isReadOnly = !isLoggedIn;
+
   // 목적지 이동
   useEffect(() => {
     if (!destination || !geocoder || !mapRef.current) return;
     geocoder.geocode({ address: destination }, (results, status) => {
       if (status === "OK" && results[0]) {
         const loc = results[0].geometry.location;
-        mapRef.current.panTo({ lat: loc.lat(), lng: loc.lng() });
-        mapRef.current.setZoom(14);
+        const p = toPlainLatLng(loc);
+        if (p) {
+          mapRef.current.panTo(p);
+          mapRef.current.setZoom(14);
+        }
       }
     });
   }, [destination, geocoder]);
 
-  // 초기값 반영 (🔒 이 화면에서는 입력된 일정만 반영)
+  // 초기값 반영 (🔒 이 화면에서는 입력된 일정만 반영) + URL 쿼리 백업
   useEffect(() => {
     if (incomingTitle) setTitle(incomingTitle);
+    else if (titleFromQuery) setTitle(titleFromQuery);
+
     if (incomingStart && incomingEnd) {
       const sd = typeof incomingStart === "string" ? new Date(incomingStart) : incomingStart;
       const ed = typeof incomingEnd === "string" ? new Date(incomingEnd) : incomingEnd;
       setDateRange([sd, ed]);
+    } else if (sdFromQuery && edFromQuery) {
+      const sd = new Date(sdFromQuery);
+      const ed = new Date(edFromQuery);
+      if (!isNaN(sd) && !isNaN(ed)) setDateRange([sd, ed]);
     }
-    if (destination) setSearchInput(destination);
-  }, [incomingTitle, incomingStart, incomingEnd, destination]);
 
-  // URL 진입 시 플랜 정보 로드
+    if (destination) setSearchInput(destination);
+  }, [incomingTitle, incomingStart, incomingEnd, destination, sdFromQuery, edFromQuery, titleFromQuery]);
+
+  // URL 진입 시 플랜 정보 로드 (토큰 없어도 시도)
   useEffect(() => {
     const needsFetch = planId && !(incomingTitle && incomingStart && incomingEnd);
     if (!needsFetch) return;
+    if (!API_BASE) return;
+
     const token = localStorage.getItem("accessToken");
-    if (!token || !API_BASE) return;
 
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/plans/${planId}`, {
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        });
+        const headers = { "Content-Type": "application/json" };
+        if (token) headers.Authorization = `Bearer ${token}`;
+        const res = await fetch(`${API_BASE}/plans/${planId}`, { headers });
         if (!res.ok) throw new Error(`GET /plans/${planId} ${res.status}`);
         const data = await res.json();
         setTitle(data.title ?? "여행");
@@ -180,12 +216,14 @@ function ScheduleMap() {
   }, [selectedDayIdx]);
 
   const [startDate, endDate] = dateRange;
-  const daysArr = getDaysArr(startDate, endDate);
+  const hasValidDates =
+    startDate instanceof Date && !isNaN(startDate) && endDate instanceof Date && !isNaN(endDate);
+  const daysArr = hasValidDates ? getDaysArr(startDate, endDate) : [];
   const pins = pinsByDay[selectedDayIdx] || [];
 
   // 날짜 길이 보정
   useEffect(() => {
-    if (!startDate || !endDate) {
+    if (!hasValidDates) {
       setPinsByDay([[]]);
       setSelectedDayIdx(0);
       return;
@@ -195,11 +233,11 @@ function ScheduleMap() {
     );
     setSelectedDayIdx((idx) => (idx < daysArr.length ? idx : 0));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startDate, endDate]);
+  }, [hasValidDates, startDate, endDate]);
 
   // 서버에서 다시 가져와 화면/ID 싱크
   const refreshPinsFromServer = async () => {
-    if (!planId || !startDate || !endDate) return;
+    if (!planId || !hasValidDates) return;
     const all = await listPlaces(planId);
     const dayIndexByIso = new Map(getDaysArr(startDate, endDate).map((d, i) => [ymd(d), i]));
     const groups = Array.from({ length: getDaysArr(startDate, endDate).length }, () => []);
@@ -218,7 +256,7 @@ function ScheduleMap() {
   // 핀 로드
   useEffect(() => {
     const loadPins = async () => {
-      if (!startDate || !endDate) return;
+      if (!hasValidDates) return;
 
       const blank = Array.from({ length: daysArr.length }, () => []);
       setIsLoadingPins(true);
@@ -243,14 +281,14 @@ function ScheduleMap() {
     };
     loadPins();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [planId, roomKey, startDate, endDate]);
+  }, [planId, roomKey, hasValidDates, startDate, endDate]);
 
   // planId 없을 때 자동 로컬 저장
   useEffect(() => {
-    if (!startDate || !endDate) return;
+    if (!hasValidDates) return;
     if (planId) return;
     localStorage.setItem(lsKey(roomKey), JSON.stringify(pinsByDay));
-  }, [pinsByDay, planId, roomKey, startDate, endDate]);
+  }, [pinsByDay, planId, roomKey, hasValidDates]);
 
   // Polyline
   const polylineRef = useRef(null);
@@ -308,8 +346,10 @@ function ScheduleMap() {
         },
         (place, status) => {
           if (status === window.google.maps.places.PlacesServiceStatus.OK) {
+            const pos = toPlainLatLng(place.geometry.location);
+            if (!pos) return;
             setInfoWindow({
-              position: toLatLngObj(place.geometry.location),
+              position: pos,
               info: {
                 placeId: place.place_id,
                 name: place.name,
@@ -325,13 +365,17 @@ function ScheduleMap() {
       );
     });
 
-    // 우클릭 → 자유 핀 추가
+    // 우클릭 → 자유 핀 추가 (읽기 전용이면 제한)
     rightClickListenerRef.current = map.addListener("rightclick", async (e) => {
+      if (isReadOnly) {
+        alert("로그인 후 이용할 수 있어요.");
+        return;
+      }
       const latLng = e.latLng;
       if (!latLng) return;
 
       const [sd, ed] = dateRange;
-      if (!sd || !ed) {
+      if (!(sd instanceof Date) || isNaN(sd) || !(ed instanceof Date) || isNaN(ed)) {
         alert("먼저 여행 날짜를 선택하세요.");
         return;
       }
@@ -359,7 +403,6 @@ function ScheduleMap() {
             travelDate,
             orderInDay: basePin.order,
           });
-          // 서버에서 다시 가져와 진짜 id로 싱크
           await refreshPinsFromServer();
         } catch (err) {
           console.error("자유핀 저장 실패:", err);
@@ -440,10 +483,14 @@ function ScheduleMap() {
     };
   }, []);
 
-  // 핀 추가 (정보창/검색 결과에서)
+  // 핀 추가 (정보창/검색 결과에서) — 읽기 전용이면 제한
   const handleAddPin = async () => {
+    if (isReadOnly) {
+      alert("로그인 후 이용할 수 있어요.");
+      return;
+    }
     if (!infoWindow && !searchResult) return;
-    if (!startDate || !endDate) {
+    if (!hasValidDates) {
       alert("먼저 여행 날짜를 선택하세요.");
       return;
     }
@@ -454,6 +501,7 @@ function ScheduleMap() {
 
     const basePin = {
       name: data.info.name || "장소",
+      address: data.info.address || "",
       photo: data.info.photo ?? null,
       position,
       order: pins.length + 1,
@@ -489,8 +537,12 @@ function ScheduleMap() {
     }
   };
 
-  // 삭제
+  // 삭제 — 읽기 전용이면 제한
   const handleDeletePin = async (id) => {
+    if (isReadOnly) {
+      alert("로그인 후 이용할 수 있어요.");
+      return;
+    }
     if (planId) {
       try {
         await deletePlace(planId, id);
@@ -525,7 +577,8 @@ function ScheduleMap() {
     if (!autocomplete) return;
     const place = autocomplete.getPlace();
     if (!place.geometry?.location) return;
-    const location = toLatLngObj(place.geometry.location);
+    const location = toPlainLatLng(place.geometry.location);
+    if (!location) return;
     const map = mapRef.current;
 
     setSearchResult({
@@ -545,21 +598,17 @@ function ScheduleMap() {
 
   // 주변 탐색
   const handleNearbySearch = (type) => {
-    if (activeCategory === type) {
-      setActiveCategory(null);
-      setNearbyMarkers([]);
-      setShowCategoryList(false);
-      return;
-    }
-    setActiveCategory(type);
+    setActiveCategory((prev) => (prev === type ? null : type));
+    setShowCategoryList((prev) => (prev && activeCategory === type ? false : true));
     setNearbyMarkers([]);
-    setShowCategoryList(true);
     if (!mapRef.current) return;
 
     const map = mapRef.current;
     const service = new window.google.maps.places.PlacesService(map);
     const c = map.getCenter();
-    service.nearbySearch({ location: c, radius: 1200, type }, (results, status) => {
+    const centerPlain = toPlainLatLng(c) || { lat: c.lat(), lng: c.lng() };
+
+    service.nearbySearch({ location: centerPlain, radius: 1200, type }, (results, status) => {
       if (status === window.google.maps.places.PlacesServiceStatus.OK && results.length) {
         setNearbyMarkers(results.slice(0, 20));
       } else {
@@ -591,8 +640,10 @@ function ScheduleMap() {
       },
       (result, status) => {
         if (status === window.google.maps.places.PlacesServiceStatus.OK) {
+          const pos = toPlainLatLng(result.geometry.location);
+          if (!pos) return;
           setInfoWindow({
-            position: { lat: result.geometry.location.lat(), lng: result.geometry.location.lng() },
+            position: pos,
             info: {
               placeId: result.place_id,
               name: result.name,
@@ -608,17 +659,20 @@ function ScheduleMap() {
     );
   };
 
-  // DnD
+  // DnD — 읽기 전용이면 드래그 무시
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const handleDragEnd = async ({ active, over }) => {
-    if (!over || active.id === over.id) return;
+    if (isReadOnly) {
+      return;
+    }
+    if (!over || String(active.id) === String(over.id)) return;
     const oldIndex = pins.findIndex((p) => String(p.id) === String(active.id));
     const newIndex = pins.findIndex((p) => String(p.id) === String(over.id));
     const newOrder = arrayMove(pins, oldIndex, newIndex).map((p, i) => ({ ...p, order: i + 1 }));
     setPinsByDay((prev) => prev.map((arr, idx) => (idx === selectedDayIdx ? newOrder : arr)));
 
     try {
-      if (planId) {
+      if (planId && hasValidDates) {
         const dayDate = ymd(getDaysArr(startDate, endDate)[selectedDayIdx]);
         await reorderPlaces(
           planId,
@@ -633,17 +687,6 @@ function ScheduleMap() {
 
   if (!isLoaded) return <div>Loading...</div>;
 
-  // 🔒 일정 없으면 진입 차단
-  if (!startDate || !endDate) {
-    return (
-      <div className={styles.page} style={{ display: "grid", placeItems: "center" }}>
-        <div style={{ padding: 24, background: "#fff", border: "1px solid #eee", borderRadius: 12 }}>
-          스케줄맵은 대시보드에서 날짜를 설정한 뒤에만 사용할 수 있어요.
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className={styles.page}>
       {/* ===== 왼쪽 패널 ===== */}
@@ -657,7 +700,13 @@ function ScheduleMap() {
             type="button"
             onClick={async () => {
               try {
-                await navigator.clipboard.writeText(window.location.href);
+                const url = new URL(window.location.href);
+                if (planId && startDate && endDate) {
+                  url.searchParams.set("sd", ymd(startDate));
+                  url.searchParams.set("ed", ymd(endDate));
+                  url.searchParams.set("t", title || "여행");
+                }
+                await navigator.clipboard.writeText(url.toString());
                 alert("일정이 클립보드에 복사되었습니다!");
               } catch {
                 alert("복사 실패! (브라우저 권한 또는 HTTPS 환경 확인)");
@@ -679,9 +728,13 @@ function ScheduleMap() {
 
           <button
             type="button"
-            disabled={!planId || isLeaving}
+            disabled={!planId || isLeaving || isReadOnly}
             className={`${styles.chipBtn} ${styles.leaveBtn}`}
             onClick={async () => {
+              if (isReadOnly) {
+                alert("로그인 후 이용할 수 있어요.");
+                return;
+              }
               if (!planId) {
                 alert("플랜 ID가 없어 방을 나갈 수 없어요.");
                 return;
@@ -702,9 +755,15 @@ function ScheduleMap() {
                 setIsLeaving(false);
               }
             }}
-            title={!planId ? "플랜 ID가 없어 사용할 수 없습니다" : "방을 나갑니다"}
+            title={
+              isReadOnly
+                ? "로그인 후 사용할 수 있습니다"
+                : !planId
+                ? "플랜 ID가 없어 사용할 수 없습니다"
+                : "방을 나갑니다"
+            }
           >
-            {isLeaving ? "나가는 중..." : (texts.outRoom)}
+            {isLeaving ? "나가는 중..." : texts.outRoom}
           </button>
         </div>
 
@@ -714,6 +773,7 @@ function ScheduleMap() {
           className={styles.titleInput}
           maxLength={30}
           placeholder={texts.tripNamePlaceholder}
+          disabled={isReadOnly}
         />
 
         {/* 일정(날짜) 보기 전용 */}
@@ -725,10 +785,7 @@ function ScheduleMap() {
             aria-disabled="true"
             title="일정은 이 화면에서 변경할 수 없어요"
           >
-            {`${startDate.toLocaleDateString("ko-KR").replace(/\./g, ".").replace(/\s/g, "")} ~ ${endDate
-              .toLocaleDateString("ko-KR")
-              .replace(/\./g, ".")
-              .replace(/\s/g, "")}`}
+            {`${formatKDate(startDate)} ~ ${formatKDate(endDate)}`}
           </button>
         </div>
 
@@ -773,9 +830,11 @@ function ScheduleMap() {
             if (searchInput.trim() && geocoder && mapRef.current) {
               geocoder.geocode({ address: searchInput.trim() }, (results, status) => {
                 if (status === "OK" && results[0]) {
-                  const loc = results[0].geometry.location;
-                  mapRef.current.panTo({ lat: loc.lat(), lng: loc.lng() });
-                  mapRef.current.setZoom(14);
+                  const p = toPlainLatLng(results[0].geometry.location);
+                  if (p) {
+                    mapRef.current.panTo(p);
+                    mapRef.current.setZoom(14);
+                  }
                 } else {
                   alert(texts.notFound);
                 }
@@ -795,6 +854,7 @@ function ScheduleMap() {
           </Autocomplete>
         </form>
 
+        {/* 주변 리스트(읽기 전용에서도 보기만 가능) */}
         {showCategoryList && nearbyMarkers.length > 0 && (
           <div className={styles.nearbyList}>
             <div className={styles.nearbyTitle}>{texts.searchResultTitle}</div>
@@ -827,13 +887,23 @@ function ScheduleMap() {
           </div>
         )}
 
-        <div className={styles.pinListHead}>{isLoadingPins && <span className={styles.pinLoading}>불러오는 중…</span>}</div>
+        <div className={styles.pinListHead}>
+          {isLoadingPins && <span className={styles.pinLoading}>불러오는 중…</span>}
+          {isReadOnly && <span style={{ marginLeft: 8, color: "#b3261e", fontSize: 12 }}>읽기 전용(로그인 필요)</span>}
+        </div>
 
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={pins.map((p) => String(p.id))} strategy={verticalListSortingStrategy}>
             <div style={{ flex: 1, overflowY: "auto", minHeight: 50 }}>
               {pins.map((pin, idx) => (
-                <DraggablePin key={pin.id} pin={pin} index={idx} onClick={() => handlePinClick(pin)} onDelete={() => handleDeletePin(pin.id)} />
+                <DraggablePin
+                  key={pin.id}
+                  pin={pin}
+                  index={idx}
+                  onClick={() => handlePinClick(pin)}
+                  onDelete={() => handleDeletePin(pin.id)}
+                  readOnly={isReadOnly}
+                />
               ))}
             </div>
           </SortableContext>
@@ -849,8 +919,16 @@ function ScheduleMap() {
           center={center}
           zoom={14}
           onLoad={onLoadMap}
-          options={{ gestureHandling: "greedy", clickableIcons: true, mapTypeControl: false, fullscreenControl: false, streetViewControl: false, zoomControl: true }}
+          options={{
+            gestureHandling: "greedy",
+            clickableIcons: true,
+            mapTypeControl: false,
+            fullscreenControl: false,
+            streetViewControl: false,
+            zoomControl: true,
+          }}
         >
+          {/* 내 핀 */}
           {pins.map((pin, idx) => (
             <Marker
               key={pin.id}
@@ -865,15 +943,20 @@ function ScheduleMap() {
             />
           ))}
 
-          {nearbyMarkers.map((place) => (
-            <Marker
-              key={place.place_id}
-              position={{ lat: place.geometry.location.lat(), lng: place.geometry.location.lng() }}
-              icon={{ url: "https://maps.google.com/mapfiles/ms/icons/blue-dot.png" }}
-              title={place.name}
-              onClick={() => showPlaceDetail(place)}
-            />
-          ))}
+          {/* 주변 검색(파란 점) */}
+          {nearbyMarkers.map((place) => {
+            const pos = toPlainLatLng(place.geometry?.location);
+            if (!pos) return null;
+            return (
+              <Marker
+                key={place.place_id}
+                position={pos}
+                icon={{ url: "https://maps.google.com/mapfiles/ms/icons/blue-dot.png" }}
+                title={place.name}
+                onClick={() => showPlaceDetail(place)}
+              />
+            );
+          })}
 
           {(infoWindow || searchResult) && (
             <CustomInfoWindow
@@ -888,15 +971,22 @@ function ScheduleMap() {
             />
           )}
         </GoogleMap>
+        <CursorLayer planId={planId} currentUser={user} isLoggedIn={!!isLoggedIn} />
 
         <PinModal
           pin={selectedPin}
           open={modalOpen}
           onClose={handleModalClose}
           onCommentChange={async (comment) => {
+            if (isReadOnly) {
+              alert("로그인 후 이용할 수 있어요.");
+              return;
+            }
             setPinsByDay((arr) =>
               arr.map((pins, idx) =>
-                idx !== selectedDayIdx ? pins : pins.map((p) => (p.id === selectedPin.id ? { ...p, comment, address: comment } : p))
+                idx !== selectedDayIdx
+                  ? pins
+                  : pins.map((p) => (p.id === selectedPin.id ? { ...p, comment, address: comment } : p))
               )
             );
             setSelectedPin((p) => ({ ...p, comment, address: comment }));
@@ -912,10 +1002,23 @@ function ScheduleMap() {
               alert("메모 수정 실패: " + err.message);
             }
           }}
+          readOnly={isReadOnly}
         />
       </div>
 
+      {/* 멤버 활동은 그대로 노출 */}
       <RoomPresenceDock roomKey={roomKey} currentUser={user} planId={planId} />
+
+      {/* 비로그인: 스케줄 화면 안에서 바로 로그인 */}
+      {isReadOnly && (
+        <InlineLoginFab
+          onLoggedIn={(u) => {
+            setIsLoggedIn?.(true);
+            setUser?.(u);
+            refreshPinsFromServer?.();
+          }}
+        />
+      )}
     </div>
   );
 }

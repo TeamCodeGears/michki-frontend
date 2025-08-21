@@ -1,0 +1,64 @@
+.cursor-layer {
+  position: fixed; /* 뷰포트 기준 (x,y 비율이므로) */
+  inset: 0;
+  pointer-events: none; /* 커서 레이어는 클릭 막지 않음 */
+  z-index: 9999; /* 지도/패널 위에 */
+}
+
+.cursor-item {
+  position: absolute;
+  transform: translate(-8px, -8px); /* 점 중심 오프셋 */
+}
+
+.cursor-dot {
+  width: 16px;
+  height: 16px;
+  border: 3px solid #1677ff;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,.16);
+}
+
+.cursor-name {
+  margin-top: 4px;
+  display: inline-block;
+  color: #fff;
+  font-weight: 700;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0,0,0,.12);
+}
+
+.cursor-bubble {
+  position: absolute;
+  top: -36px;
+  left: 12px;
+  max-width: 260px;
+  background: #111;
+  color: #fff;
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.2;
+  box-shadow: 0 2px 8px rgba(0,0,0,.24);
+  white-space: pre-wrap;
+}
+
+.cursor-chat-input {
+  position: fixed;
+  transform: translate(10px, -28px);
+  z-index: 10000;
+  pointer-events: auto; /* 입력 가능해야 함 */
+}
+
+.cursor-chat-input input {
+  width: 220px;
+  padding: 6px 8px;
+  font-size: 13px;
+  border-radius: 8px;
+  border: 1px solid #ddd;
+  outline: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,.12);
+}

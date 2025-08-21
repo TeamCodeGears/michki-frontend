@@ -73,3 +73,14 @@ export async function getSharedPlan(shareURI) {
 
 /** getPlans를 listPlans 이름으로도 export (호환) */
 export { getPlans as listPlans };
+
+/** 플랜 멤버십 보장(없으면 가입/있으면 통과) */
+export async function ensureMembership(planId) {
+  try {
+    await http.post(`/plans/${planId}`); // 백엔드가 join/ensure 역할
+  } catch (e) {
+    // 이미 존재/기타 사소한 오류면 눈감고 진행
+    // 필요하면 e.response?.status 체크해서 409 등만 무시하도록 분기
+    console.warn("ensureMembership ignored error:", e?.response?.status || e?.message);
+  }
+}

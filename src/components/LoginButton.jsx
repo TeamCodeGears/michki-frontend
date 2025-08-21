@@ -1,6 +1,6 @@
 // src/components/LoginButton.jsx
 import React, { useContext, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom"; // ← location 추가
 import "./LoginButton.css";
 import googleIcon from "../assets/google-icon.webp";
 import { useGoogleLogin } from "@react-oauth/google";
@@ -37,6 +37,10 @@ async function fetchGoogleUserinfo(accessToken) {
 function LoginButton({ isLoggedIn, setIsLoggedIn, setUser }) {
   const { texts } = useContext(LanguageContext);
   const navigate = useNavigate();
+  const location = useLocation();                   // ← 현재 URL 파라미터 확인용
+  const params = new URLSearchParams(location.search);
+  const redirectParam = params.get("redirect") || "/dashboard";
+  const isPopup = params.get("popup") === "1";      // ← 팝업 모드 여부
 
   const [loading, setLoading] = useState(false);
   const [errMsg, setErrMsg] = useState("");
@@ -51,7 +55,7 @@ function LoginButton({ isLoggedIn, setIsLoggedIn, setUser }) {
     flow: "implicit",
     scope: "openid profile email",
     redirect_uri: redirectUri,
-    prompt: "none", // 가능한 경우 로그인창 없이 토큰 발급
+    prompt: "none",
     onSuccess: async ({ access_token }) => {
       try {
         const u = await fetchGoogleUserinfo(access_token);
@@ -68,7 +72,6 @@ function LoginButton({ isLoggedIn, setIsLoggedIn, setUser }) {
       }
     },
     onError: () => {
-      // silent 실패(쿠키/세션 이슈 등)면, 인터랙티브 팝업으로 한 번 더 시도
       loginForProfileInteractive();
     },
   });
@@ -77,7 +80,7 @@ function LoginButton({ isLoggedIn, setIsLoggedIn, setUser }) {
     flow: "implicit",
     scope: "openid profile email",
     redirect_uri: redirectUri,
-    prompt: "consent", // 필요시 팝업 표시
+    prompt: "consent",
     onSuccess: async ({ access_token }) => {
       try {
         const u = await fetchGoogleUserinfo(access_token);
@@ -135,7 +138,7 @@ function LoginButton({ isLoggedIn, setIsLoggedIn, setUser }) {
           backendLogin?.data?.id ??
           null;
 
-        // 토큰 저장(동기)
+        // 토큰 저장
         if (backendLogin?.accessToken) {
           localStorage.setItem("accessToken", backendLogin.accessToken);
         }
@@ -143,23 +146,36 @@ function LoginButton({ isLoggedIn, setIsLoggedIn, setUser }) {
           localStorage.setItem("refreshToken", backendLogin.refreshToken);
         }
 
-        // ✅ 핵심: 먼저 partial user를 '항상' 저장 → 이후 네비게이트해도 값 보존
+        // partial user 저장
         if (savedId !== null) {
           const partialUser = { id: savedId, name, picture };
-          setUser(partialUser); // 렌더 큐
-          localStorage.setItem("user", JSON.stringify(partialUser)); // 동기 저장
+          setUser(partialUser);
+          localStorage.setItem("user", JSON.stringify(partialUser));
         }
 
-        // 로그인 상태 선반영
+        // 로그인 상태
         setIsLoggedIn(true);
 
-        // name/picture가 비면 백그라운드 보강(우선 silent)
+        // 프로필 보강
         if (!name || !picture) {
           loginForProfileSilent();
         }
 
-        // 그리고 페이지 전환
-        navigate("/dashboard");
+        // ✅ 팝업/일반 모드 분기
+        if (isPopup) {
+          // 부모창에 로그인 성공 알림
+          try {
+            window.opener?.postMessage({ type: "login-success" }, window.location.origin);
+          } catch (e) {
+            console.warn("postMessage 실패(무시 가능):", e);
+          }
+          // 팝업 닫기 (팝업 차단 시 무시)
+          window.close();
+          return;
+        } else {
+          // 일반 모드면 redirect 파라미터로 이동
+          navigate(redirectParam, { replace: true });
+        }
       } catch (err) {
         console.error("로그인 실패:", err);
         setIsLoggedIn(false);
