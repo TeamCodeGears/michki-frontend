@@ -41,9 +41,10 @@ export const texts = {
     scheduleCreate: "일정생성",
     create: "생성", 
     notSchedule: "올해 계획이 없어요.",
-    FailedCreate: "생성에 실패하였습니다.",
+    failedCreate: "생성에 실패하였습니다.",
     outRoom: "방나가기",
-
+    recommended: "추천",
+    membershipWithdrawal: "회원탈퇴",
     
     myTrips: [
       { name: '내 여행 1', date: '2025/07/01 ~ 2025/07/05' },
@@ -132,9 +133,10 @@ export const texts = {
     scheduleCreate: "日程生成",
     create: "生成",  
     notSchedule: "今年は計画がありません。",
-    FailedCreate: "作成に失敗しました。",
+    failedCreate: "作成に失敗しました。",
     outRoom: "部屋を出る",
-
+    recommended: "推薦",
+    membershipWithdrawal: "会員脱退",
     myTrips: [
       { name: '私の旅行 1', date: '2025/07/01 ~ 2025/07/05' },
       { name: '私の旅行 2', date: '2025/06/15 ~ 2025/06/20' },

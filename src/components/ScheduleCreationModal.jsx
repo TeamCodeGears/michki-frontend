@@ -140,7 +140,7 @@ function ScheduleCreationModal({
       onClose?.();
     } catch (err) {
       console.error("create plan failed:", err);
-      alert(err?.message ?? texts.FailedCreate);
+      alert(err?.message ?? texts.failedCreate);
     }
   };
 

@@ -1,7 +1,8 @@
 // src/components/InlineLoginFab.jsx
 import { useRef, useState } from "react";
 import { useGoogleLogin } from "@react-oauth/google";
-import { ensureMembership } from "../api/plans";
+// ❌ import { ensureMembership } from "../api/plans";
+import { getPlan } from "../api/plans"; // ✔ 필요 시 접근성 확인용
 
 const API_BASE =
   (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_BASE) ||
@@ -38,7 +39,7 @@ export default function InlineLoginFab({ onLoggedIn, planId }) {
   const redirectUri =
     (typeof import.meta !== "undefined" &&
       import.meta.env?.VITE_GOOGLE_REDIRECT_URI) ||
-    window.location.origin; // 홈과 동일(구글 콘솔/백엔드 등록값과 정확히 일치)
+    window.location.origin;
 
   // ----- (1) silent implicit 보강을 "필요한 때만" 시도하기 위한 프라미스 래퍼 -----
   const silentResolveRef = useRef(null);
@@ -48,7 +49,7 @@ export default function InlineLoginFab({ onLoggedIn, planId }) {
     flow: "implicit",
     scope: "openid profile email",
     redirect_uri: redirectUri,
-    prompt: "none", // 동의/팝업 없이 시도(세션 없으면 실패)
+    prompt: "none",
     onSuccess: ({ access_token }) => {
       silentResolveRef.current?.(access_token);
     },
@@ -61,7 +62,7 @@ export default function InlineLoginFab({ onLoggedIn, planId }) {
     return new Promise((resolve, reject) => {
       silentResolveRef.current = resolve;
       silentRejectRef.current = reject;
-      startSilentImplicit(); // 팝업 없음(세션 없으면 곧바로 onError)
+      startSilentImplicit();
     });
   }
 
@@ -107,13 +108,12 @@ export default function InlineLoginFab({ onLoggedIn, planId }) {
         // 2-3) 최종 저장
         localStorage.setItem("user", JSON.stringify(user));
 
-        // 2-4) 방 멤버십 보장 (planId가 주어진 경우)
+        // 2-4) (선택) 플랜 접근 가능 여부만 확인 — 조인 자동 호출 제거
         if (planId) {
           try {
-            await ensureMembership(planId);
+            await getPlan(planId); // 실패해도 로그인은 유지
           } catch (e) {
-            // 이미 멤버거나 사소 오류면 무시
-            console.warn("ensureMembership:", e?.response?.status || e?.message);
+            console.warn("getPlan failed after login:", e?.response?.status || e?.message);
           }
         }
 

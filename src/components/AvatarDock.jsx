@@ -115,7 +115,7 @@ export default function AvatarDock({ user, isLoggedIn, setIsLoggedIn, setUser })
 
   // i18n 키가 없을 수 있으니 안전한 fallback
   const labelLogout = texts?.logout || "로그아웃";
-  const labelWithdraw = texts?.withdraw || texts?.deleteAccount || "회원 탈퇴";
+  const labelWithdraw = texts?.withdraw || texts?.deleteAccount || texts?.membershipWithdrawal;
 
   return (
     <div

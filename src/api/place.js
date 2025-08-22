@@ -77,7 +77,7 @@ function extractPlacesFromPlan(plan) {
     const days = plan[dk];
     if (Array.isArray(days)) {
       const out = [];
-      days.forEach((day, dayIdx) => {
+      days.forEach((day) => {
         const dayDate = day?.travelDate ?? day?.date ?? day?.dayDate ?? null;
         const innerKeys = ["places", "items", "planPlaces", "poiList"];
         for (const ik of innerKeys) {
@@ -178,8 +178,58 @@ export const reorderPlaces = (planId, travelDate, places) =>
     })),
   });
 
-// 추천
+/** ---------- 추천 ---------- */
+
+/** 응답 정규화: 누적 핀수 필드를 pinCount로 통일 */
+const normalizeRecommendation = (r) => {
+  if (!r || typeof r !== "object") return null;
+  const latitude = safeNum(r.latitude ?? r.lat);
+  const longitude = safeNum(r.longitude ?? r.lng);
+  if (latitude == null || longitude == null) return null;
+
+  const pinCount =
+    Number(
+      r.pinCount ??
+      r.count ??
+      r.total ??
+      r.hits ??
+      r.frequency ??
+      r.numPins ??
+      r.placeCount ??
+      0
+    ) || 0;
+
+  return {
+    googlePlaceId: r.googlePlaceId ?? r.placeIdStr ?? r.google_id ?? "",
+    name: (r.name ?? "").trim(),
+    latitude,
+    longitude,
+    pinCount, // ✅ 누적 핀 수 (서버 집계)
+  };
+};
+
+/**
+ * 추천 호출 (서버 DTO: PlaceRecommendationRequestDto)
+ * @param {number} planId
+ * @param {{centerLatitude:number, centerLongitude:number, zoomLevel:number}} dto
+ * @returns {Promise<Array<{googlePlaceId:string,name:string,latitude:number,longitude:number,pinCount:number}>>}
+ */
 export const recommendPlaces = async (planId, dto) => {
-  const res = await http.post(`/plans/${planId}/recommendations`, dto);
-  return res.data;
+  // 서버 @NotNull 준수 + 타입 정리
+  const centerLatitude = Number(dto?.centerLatitude);
+  const centerLongitude = Number(dto?.centerLongitude);
+  let zoomLevel = Number(dto?.zoomLevel);
+
+  if (!Number.isFinite(centerLatitude) || !Number.isFinite(centerLongitude) || !Number.isFinite(zoomLevel)) {
+    throw new Error("recommendPlaces: centerLatitude/centerLongitude/zoomLevel are required numbers");
+    }
+
+  // 지도 일반 범위로 클램프(선택) — 서버가 자체 검증한다면 제거해도 무방
+  zoomLevel = Math.max(0, Math.min(22, Math.round(zoomLevel)));
+
+  const payload = { centerLatitude, centerLongitude, zoomLevel };
+  const res = await http.post(`/plans/${planId}/recommendations`, payload);
+
+  const raw = Array.isArray(res?.data) ? res.data : (res?.data ? [res.data] : []);
+  return raw.map(normalizeRecommendation).filter(Boolean);
 };

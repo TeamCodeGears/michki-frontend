@@ -11,4 +11,7 @@ export default defineConfig({
     strictPort: true,
     allowedHosts: 'all',
   },
+  define: {
+    global: 'window',  // ← 추가: 브라우저 전역으로 매핑
+  },
 })

@@ -1,86 +1,94 @@
 // src/api/plans.js
 import http from "./http";
 
-/** 연도별 플랜 목록 */
+/** 연도별 플랜 목록: GET /plans?year=YYYY */
 export async function getPlans(year) {
   const res = await http.get("/plans", { params: { year } });
   return res.data ?? [];
 }
 
-/** 단건 조회 */
-export async function getPlan(planId) {
-  const res = await http.get(`/plans/${planId}`);
-  return res.data;
-}
+/** (별칭) */
+export { getPlans as listPlans };
 
-/** 생성 (+ planId 미반환 대비 폴백) */
+/** 플랜 생성: POST /plans  (title, startDate, endDate) */
 export async function createPlan({ title, startDate, endDate }) {
   const payload = { title, startDate, endDate };
   const res = await http.post("/plans", payload);
 
   const data = res.data ?? {};
-  const planId =
-    data.planId ?? data.id ?? data?.data?.planId ?? null;
-
+  const planId = data.planId ?? data.id ?? data?.data?.planId ?? null;
   if (planId) return { ...data, planId };
 
-  // 폴백: 방금 만든 플랜 찾기
+  // 폴백: 같은 연도 목록에서 가장 근접한 걸 찾기
   const year = Number(String(startDate).slice(0, 4));
   const list = await getPlans(year);
 
   const found = list.find(
     (p) =>
       p.title === title &&
-      String(p.startDate).slice(0,10) === String(startDate).slice(0,10) &&
-      String(p.endDate).slice(0,10) === String(endDate).slice(0,10)
+      String(p.startDate).slice(0, 10) === String(startDate).slice(0, 10) &&
+      String(p.endDate).slice(0, 10) === String(endDate).slice(0, 10)
   );
   if (found?.planId) return found;
 
   const candidates = list.filter((p) => p.title === title);
   if (candidates.length) {
-    candidates.sort((a,b) => (b.planId ?? 0) - (a.planId ?? 0));
+    candidates.sort((a, b) => (b.planId ?? 0) - (a.planId ?? 0));
     return candidates[0];
   }
   throw new Error("생성 응답에 planId가 없고 목록에서도 찾을 수 없어요.");
 }
 
-/** 방 나가기 (백엔드: POST /plans/{planId}; 마지막 1인이면 삭제) */
+/** 플랜 상세: GET /plans/{planId} */
+export async function getPlan(planId) {
+  const res = await http.get(`/plans/${planId}`);
+  return res.data;
+}
+
+/** 방 나가기/삭제 트리거: POST /plans/{planId}
+ * - Swagger에 존재. 프로젝트에서 '나가기'와 '삭제' 모두 이 엔드포인트를 쓰므로
+ *   두 이름으로 래핑해서 내보냅니다.
+ */
 export async function leavePlan(planId) {
   await http.post(`/plans/${planId}`);
 }
-
-/** 내 아바타 테두리 색상 변경 */
-export async function changeColor(planId, color) {
-  await http.post(`/plans/${planId}/newColor`, { color });
-}
-
-/** 일정 삭제 = 방 나가기와 동일 호출 */
 export async function deletePlan(planId) {
   await http.post(`/plans/${planId}`);
 }
 
-/** 온라인 멤버 */
+/** 온라인 멤버: GET /plans/{planId}/members/online-members (문서에 있음) */
 export async function getOnlineMembers(planId) {
   const res = await http.get(`/plans/${planId}/members/online-members`);
   return res.data ?? [];
 }
 
-/** 공유된 플랜 조회 */
+/** 공유된 플랜 조회: GET /plans/share/{shareURI} */
 export async function getSharedPlan(shareURI) {
   const res = await http.get(`/plans/share/${shareURI}`);
   return res.data;
 }
 
-/** getPlans를 listPlans 이름으로도 export (호환) */
-export { getPlans as listPlans };
+/** 색상 변경: POST /plans/{planId}/newColor { color } */
+export async function changeColor(planId, color) {
+  await http.post(`/plans/${planId}/newColor`, { color });
+}
 
-/** 플랜 멤버십 보장(없으면 가입/있으면 통과) */
-export async function ensureMembership(planId) {
-  try {
-    await http.post(`/plans/${planId}`); // 백엔드가 join/ensure 역할
-  } catch (e) {
-    // 이미 존재/기타 사소한 오류면 눈감고 진행
-    // 필요하면 e.response?.status 체크해서 409 등만 무시하도록 분기
-    console.warn("ensureMembership ignored error:", e?.response?.status || e?.message);
+/** 내 색상 조회: GET /plans/{planId} 의 members 배열에서 내 멤버 찾아 color 반환 */
+export async function getMyColorViaPlan(planId, { memberId, nickname }) {
+  const data = await getPlan(planId);
+  const members = data?.members || [];
+  let me = null;
+  if (memberId != null) {
+    me = members.find((m) => String(m.memberId) === String(memberId));
   }
+  if (!me && nickname) {
+    me = members.find((m) => m.nickname === nickname);
+  }
+  return { color: me?.color ?? null, me };
+}
+
+/** 알림 읽음 처리 */
+export async function markNotificationsRead(planId) {
+  // planId를 서버에서 사용하지 않으면 제외해도 됨. 있으면 쿼리/바디로 같이 보냄
+  return http.post("/plans/notifications/read", { planId }).then(r => r.data);
 }

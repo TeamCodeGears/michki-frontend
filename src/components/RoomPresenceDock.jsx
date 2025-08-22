@@ -1,29 +1,36 @@
 // src/components/RoomPresenceDock.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { changeColor } from "../api/plans";
+import { changeColor, getPlan, getMyColorViaPlan, markNotificationsRead } from "../api/plans";
+import { createPlanStompClient } from "../socket/planSocket";
 
-/** 입장 순서 기본 팔레트 (테두리 노란 느낌은 CSS로 표현) */
+/* ========================= helpers & constants ========================= */
+
 const COLORS = ["#ff4d4f", "#fa8c16", "#fadb14", "#52c41a", "#1677ff", "#722ed1", "#eb2f96"];
+const PALETTE = COLORS;
 
-/** 팝오버에서 보여줄 팔레트 (원하면 추가/수정) */
-const PALETTE = COLORS; // 동일 팔레트 사용 (원하면 더 늘려도 됨)
+/** 구글 프로필 URL 정규화 (경로형 =sNN-c, 쿼리형 ?sz= 둘 다 커버) */
+function normalizeGooglePhoto(url) {
+  if (!url) return url;
+  try {
+    const u = new URL(url, window.location.origin);
+    if (/googleusercontent\.com/i.test(u.hostname)) {
+      const pathHasSize = /=s\d+/i.test(u.pathname);
+      const queryHasSz = u.searchParams.has("sz");
+      if (!pathHasSize && !queryHasSz) {
+        u.pathname = u.pathname + "=s64-c";
+        u.searchParams.set("sz", "64");
+      }
+    }
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
 
-const ringStyle = (c, clickable) => ({
-  width: 40,
-  height: 40,
-  borderRadius: "50%",
-  border: `4px solid ${c}`,
-  overflow: "hidden",
-  background: "#fff",
-  display: "grid",
-  placeItems: "center",
-  boxShadow: "0 2px 8px rgba(0,0,0,.18)",
-  fontWeight: 800,
-  color: "#444",
-  cursor: clickable ? "pointer" : "default",
-});
+/** 멤버 식별자 통일 */
+const getIdStr = (x) => String(x?.memberId ?? x?.id ?? x?.email ?? Math.random());
 
-
+/** 로컬 프레즌스 폴백 */
 function getPresence(roomKey) {
   try {
     return JSON.parse(localStorage.getItem(`presence:${roomKey}`) || "{}");
@@ -35,64 +42,326 @@ function setPresence(roomKey, data) {
   localStorage.setItem(`presence:${roomKey}`, JSON.stringify(data));
 }
 
+/* ========================= AvatarRing (링 위에 이미지 덮기) ========================= */
+
+function AvatarRing({ picture, fallbackInitial, borderColor = "#ccc", size = 40, onClick, blocked }) {
+  const [failed, setFailed] = useState(false);
+  const showImage = picture && !failed;
+
+  return (
+    <button
+      onClick={onClick}
+      title={fallbackInitial}
+      aria-label={fallbackInitial}
+      style={{
+        position: "relative",
+        width: size,
+        height: size,
+        border: "none",
+        padding: 0,
+        background: "transparent",
+        cursor: blocked ? "default" : "pointer",
+        borderRadius: "50%",
+        boxShadow: "0 2px 8px rgba(0,0,0,.18)",
+      }}
+    >
+      {/* 링 (아래 레이어) */}
+      {/* <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          borderRadius: "50%",
+          border: `4px solid ${borderColor}`,
+          boxSizing: "border-box",
+          background: "transparent",
+          zIndex: 0,
+        }}
+      /> */}
+      {/* 이미지/이니셜 (위 레이어) */}
+      {showImage ? (
+        <img
+          src={picture}
+          alt={fallbackInitial}
+          onError={() => setFailed(true)}
+          referrerPolicy="no-referrer"
+          decoding="async"
+          loading="lazy"
+          draggable={false}
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            borderRadius: "50%",
+            zIndex: 1,
+            display: "block",
+            border: `3px solid ${borderColor || "#ccc"}`, // ✅ 본인 색깔 테두리
+            left: -3,
+            top: -3,
+          }}
+        />
+      ) : (
+        <span
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontWeight: 800,
+            color: "#666",
+            zIndex: 1,
+            userSelect: "none",
+          }}
+        >
+          {fallbackInitial?.[0]?.toUpperCase() || "U"}
+        </span>
+      )}
+    </button>
+  );
+}
+
+/* ========================= main component ========================= */
+
 export default function RoomPresenceDock({ roomKey, currentUser, planId }) {
-  /** 훅은 항상 호출 (조기 return 금지) */
   const [members, setMembers] = useState([]);
-  const dockRef = useRef(null);
+  const [serverMyColor, setServerMyColor] = useState(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerPos, setPickerPos] = useState({ x: 0, y: 0 });
 
-  // 이미지 에러 트래킹: 실패한 멤버는 이니셜로 폴백
-  const [imgErrorMap, setImgErrorMap] = useState({});
+  const dockRef = useRef(null);
+  const didRunRef = useRef(false);
+  const stompReadyRef = useRef(false);
+  const initialSyncedRef = useRef(false);
+  const lastJoinTsRef = useRef(0);
+  const audioRef = useRef(null);
 
+  // 알림음
+  useEffect(() => {
+    if (!audioRef.current) {
+      audioRef.current = new Audio("/sounds/notification.mp3");
+      audioRef.current.preload = "auto";
+    }
+  }, []);
+  const playJoinSound = async () => {
+    try {
+      if (!audioRef.current) return;
+      audioRef.current.currentTime = 0;
+      await audioRef.current.play();
+    } catch {}
+  };
+
+  // me (로그인 사용자)
   const me = useMemo(() => {
     if (!currentUser) return null;
+    const rawPic =
+      currentUser.picture ||
+      currentUser.profileImage ||
+      currentUser.profileImageUrl ||
+      currentUser.photoUrl ||
+      "";
     return {
-      id: String(currentUser.id || currentUser.email || "me"),
-      name: currentUser.name || "User",
-      picture: currentUser.picture || "",
+      id: String(currentUser.memberId ?? currentUser.id ?? currentUser.email ?? "me"),
+      memberId: currentUser.memberId ?? currentUser.id ?? null,
+      nickname: currentUser.name || currentUser.nickname || "User",
+      name: currentUser.name || currentUser.nickname || "User",
+      picture: normalizeGooglePhoto(rawPic),
     };
   }, [currentUser]);
 
-  /** 내 현재 색상 (멤버 없을 때 안전 디폴트) */
   const myColor = useMemo(() => {
-    if (!me) return COLORS[0];
+    if (!me) return null;
+    if (serverMyColor) return serverMyColor;
     const mine = members.find((m) => m.id === me.id);
-    return mine?.color || COLORS[0];
-  }, [members, me]);
+    return mine?.color || null;
+  }, [members, me, serverMyColor]);
 
-  /** 입장/퇴장 & 주기 동기화 */
+  /** 초기 로컬 세팅(+ 서버에서 내 color 조회) */
   useEffect(() => {
-    if (!roomKey || !me) return;
+    if (!roomKey || !me || !planId) return;
+    if (didRunRef.current) return;
+    didRunRef.current = true;
 
-    const now = Date.now();
-    const store = getPresence(roomKey);
+    let intervalId;
 
-    if (!store[me.id]) {
-      const order = Object.keys(store).length;
-      const color = COLORS[order % COLORS.length];
-      store[me.id] = { id: me.id, name: me.name, picture: me.picture, color, ts: now };
-    } else {
-      store[me.id] = { ...store[me.id], name: me.name, picture: me.picture, ts: now };
-    }
-    setPresence(roomKey, store);
+    (async () => {
+      const now = Date.now();
+      const store = getPresence(roomKey);
 
-    const updateUI = () => {
-      const latest = getPresence(roomKey);
-      setMembers(Object.values(latest).sort((a, b) => a.ts - b.ts));
-    };
-    updateUI();
-    const i = setInterval(updateUI, 1200);
+      // 서버 플랜 확인 & 내 색상
+      let color = null;
+      try {
+        await getPlan(planId);
+        const { color: c } = await getMyColorViaPlan(planId, {
+          memberId: me.memberId,
+          nickname: me.nickname,
+        });
+        color = c ?? null;
+        setServerMyColor(color);
+      } catch (e) {
+        const sc = e?.response?.status;
+        if (sc === 404) {
+          console.warn(`Plan ${planId} not found/inaccessible. Local-only presence.`);
+        } else {
+          console.warn("getPlan/getMyColorViaPlan failed:", sc || e?.message);
+        }
+      }
+
+      // 로컬 프레즌스 기록
+      const pic = normalizeGooglePhoto(me.picture);
+      if (!store[me.id]) {
+        store[me.id] = { id: me.id, name: me.name, picture: pic, color, ts: now };
+      } else {
+        store[me.id] = {
+          ...store[me.id],
+          name: me.name,
+          picture: pic,
+          color: color ?? store[me.id].color ?? null,
+          ts: now,
+        };
+      }
+      setPresence(roomKey, store);
+      setMembers(Object.values(store).sort((a, b) => a.ts - b.ts));
+
+      // 폴백 주기 업데이트(STOMP 켜지면 중지)
+      intervalId = setInterval(() => {
+        if (stompReadyRef.current) return;
+        const latest = getPresence(roomKey);
+        setMembers(Object.values(latest).sort((a, b) => a.ts - b.ts));
+      }, 1200);
+    })();
 
     return () => {
-      clearInterval(i);
+      clearInterval(intervalId);
       const s = getPresence(roomKey);
       delete s[me.id];
       setPresence(roomKey, s);
     };
-  }, [roomKey, me]);
+  }, [roomKey, me, planId]);
 
-  /** 외부 클릭 시 팝오버 닫기 */
+  /** STOMP presence: LIST/JOIN/LEAVE */
+  useEffect(() => {
+    if (!planId || !me) return;
+
+    const token = localStorage.getItem("accessToken") || null;
+    const client = createPlanStompClient({
+      token,
+      onConnect: () => (stompReadyRef.current = true),
+      onDisconnect: () => (stompReadyRef.current = false),
+      onStompError: () => (stompReadyRef.current = false),
+    });
+
+    client.activate();
+
+    let sub;
+    const topic = `/topic/plans/${planId}/presence`;
+
+    const handlePresenceMsg = async (msg) => {
+      try {
+        const payload = JSON.parse(msg.body || "{}");
+        const { type, members: list, member } = payload;
+
+        if (type === "LIST" && Array.isArray(list)) {
+          // 서버 값으로 덮되, picture가 비면 이전 상태/내 로컬 사진으로 보강
+          setMembers((prev) => {
+            const prevById = new Map(prev.map((p) => [String(p.id), p]));
+            const merged = list.map((m) => {
+              const idStr = getIdStr(m);
+              const prevItem = prevById.get(idStr);
+              const rawPic =
+                m.picture || m.profileImage || m.profileImageUrl || m.photoUrl || m.avatar || "";
+
+              const isSelf =
+                String(m.memberId ?? m.id ?? m.email) === String(me.memberId ?? me.id);
+
+              const picture = normalizeGooglePhoto(
+                rawPic || prevItem?.picture || (isSelf ? me.picture : "")
+              );
+
+              return {
+                id: idStr,
+                memberId: m.memberId ?? m.id ?? null,
+                name: m.nickname || m.name || prevItem?.name || "User",
+                nickname: m.nickname || m.name || prevItem?.nickname || "User",
+                picture,
+                color: m.color ?? prevItem?.color ?? null,
+                ts: Date.now(),
+              };
+            });
+            return merged;
+          });
+
+          initialSyncedRef.current = true;
+          try { await markNotificationsRead(planId); } catch {}
+          return;
+        }
+
+        if (type === "JOIN" && member) {
+          setMembers((prev) => {
+            const idStr = getIdStr(member);
+            const exists = prev.some((p) => String(p.id) === idStr);
+            if (exists) return prev;
+
+            const rawPic =
+              member.picture ||
+              member.profileImage ||
+              member.profileImageUrl ||
+              member.photoUrl ||
+              member.avatar ||
+              "";
+
+            const isSelf =
+              String(member.memberId ?? member.id ?? member.email) === String(me.memberId ?? me.id);
+
+            const picture = normalizeGooglePhoto(rawPic || (isSelf ? me.picture : ""));
+
+            return [
+              ...prev,
+              {
+                id: idStr,
+                memberId: member.memberId ?? member.id ?? null,
+                name: member.nickname || member.name || "User",
+                nickname: member.nickname || member.name || "User",
+                picture,
+                color: member.color || null,
+                ts: Date.now(),
+              },
+            ];
+          });
+
+          const isMe =
+            String(member.memberId ?? member.id) === String(me.memberId ?? me.id);
+          const now = Date.now();
+          if (initialSyncedRef.current && !isMe && now - lastJoinTsRef.current > 500) {
+            lastJoinTsRef.current = now;
+            await playJoinSound();
+            try { await markNotificationsRead(planId); } catch {}
+          }
+          return;
+        }
+
+        if (type === "LEAVE" && member) {
+          const idStr = getIdStr(member);
+          setMembers((prev) => prev.filter((m) => String(m.id) !== idStr));
+          return;
+        }
+      } catch {}
+    };
+
+    client.onConnect = () => {
+      stompReadyRef.current = true;
+      sub = client.subscribe(topic, handlePresenceMsg);
+    };
+
+    return () => {
+      try { sub?.unsubscribe(); } catch {}
+      try { client.deactivate(); } catch {}
+      stompReadyRef.current = false;
+    };
+  }, [planId, me]);
+
+  /** 외부 클릭시 색상 팝오버 닫기 */
   useEffect(() => {
     const onDocClick = (e) => {
       if (!dockRef.current) return;
@@ -104,14 +373,13 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId }) {
 
   const hasMembers = roomKey && members.length > 0;
 
-  /** 내 아바타 클릭 → 팝오버 위치 계산 & 토글 */
   const openPickerForMe = (evt) => {
     const rect = evt.currentTarget.getBoundingClientRect();
     setPickerPos({ x: rect.left, y: rect.top });
     setPickerOpen((v) => !v);
   };
 
-  /** 이미 사용 중인 색(다른 사람)이면 선택 불가 */
+  /** 현재 방에서 다른 사람이 쓰는 색은 선택 막기 */
   const usedColors = useMemo(() => {
     const set = new Set();
     members.forEach((m) => {
@@ -120,11 +388,10 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId }) {
     return set;
   }, [members, me]);
 
-  /** 색 적용 (경합 방지 포함) */
+  /** 색상 변경 */
   const applyColor = async (hex) => {
-    if (!me) return;
+    if (!me || !planId) return;
 
-    // 최신 상태 재확인 (경합 방지)
     const s = getPresence(roomKey);
     const takenByOther = Object.values(s).some((m) => m.color === hex && m.id !== me.id);
     if (takenByOther) {
@@ -132,20 +399,21 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId }) {
       return;
     }
 
-    // 낙관적 반영
     if (s[me.id]) s[me.id].color = hex;
     setPresence(roomKey, s);
-    setMembers(Object.values(s).sort((a, b) => a.ts - b.ts));
+    setMembers((prev) => prev.map((m) => (m.id === me.id ? { ...m, color: hex } : m)));
 
     try {
-      if (planId) await changeColor(planId, hex);
+      await changeColor(planId, hex);
+      setServerMyColor(hex);
     } catch (e) {
-      console.error("색 저장 실패:", e);
-      // 필요 시 롤백 로직 추가 가능
+      console.error("색 저장 실패:", e?.response?.status || e?.message);
     } finally {
       setPickerOpen(false);
     }
   };
+
+  /* ========================= render ========================= */
 
   return (
     <div
@@ -159,50 +427,34 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId }) {
         gap: 12,
         padding: 0,
         background: "transparent",
+        alignItems: "center",
       }}
     >
-      {hasMembers
-        ? members.map((m) => {
-            const isMe = me && m.id === me.id;
-            const showImage = m.picture && !imgErrorMap[m.id];
-            const initial = (m.name?.[0] || "U").toUpperCase();
+      {hasMembers &&
+        members.map((m) => {
+          const isMe = me && m.id === me.id;
+          const pic = normalizeGooglePhoto(m.picture);
+          const initial = m.name || "User";
+          return (
+            <AvatarRing
+              key={m.id}
+              picture={pic}
+              fallbackInitial={initial}
+              borderColor={m.color || "#ccc"}
+              size={40}
+              onClick={isMe ? openPickerForMe : undefined}
+              blocked={!isMe}
+            />
+          );
+        })}
 
-            return (
-              <button
-                key={m.id}
-                title={isMe ? "아바타 색 선택" : m.name}
-                aria-label={m.name}
-                style={ringStyle(m.color, isMe)}
-                onClick={isMe ? openPickerForMe : undefined}
-              >
-                {showImage ? (
-                  <img
-                    src={m.picture}
-                    alt={m.name}
-                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                    referrerPolicy="no-referrer" // 구글 이미지 차단 방지
-                    onError={() =>
-                      setImgErrorMap((prev) => ({
-                        ...prev,
-                        [m.id]: true, // 실패 시 이니셜로 폴백
-                      }))
-                    }
-                  />
-                ) : (
-                  <span>{initial}</span>
-                )}
-              </button>
-            );
-          })
-        : null}
-
-      {/* 팝오버: 어두운 배경 + 연살구색 테두리 느낌 */}
+      {/* 색상 선택 팝오버 */}
       {pickerOpen && (
         <div
           style={{
             position: "fixed",
             left: pickerPos.x,
-            top: pickerPos.y - 60, // 아바타 위에 뜨도록
+            top: pickerPos.y - 60,
             transform: "translateX(-6px)",
             background: "#fffbe5",
             borderRadius: 10,
@@ -216,7 +468,7 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId }) {
           aria-label="아바타 색 선택"
         >
           {PALETTE.map((c) => {
-            const disabled = usedColors.has(c) && c !== myColor; // 다른 사람이 쓰는 색이면 비활성(내가 이미 쓰는 건 허용)
+            const disabled = usedColors.has(c) && c !== myColor;
             return (
               <button
                 key={c}
@@ -230,13 +482,32 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId }) {
                   background: c,
                   opacity: disabled ? 0.4 : 1,
                   cursor: disabled ? "not-allowed" : "pointer",
-                  outline: "none",
                 }}
               />
             );
           })}
         </div>
       )}
+
+      {/* 혼자 테스트용 버튼: 배포 시에 제거 */}
+      <button
+        onClick={() => playJoinSound()}
+        style={{
+          height: 28,
+          padding: "0 10px",
+          fontSize: 12,
+          fontWeight: 700,
+          color: "#333",
+          background: "#fff",
+          border: "1px solid rgba(0,0,0,0.12)",
+          borderRadius: 8,
+          cursor: "pointer",
+          boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
+          marginLeft: 6,
+        }}
+      >
+        🔔 알람 테스트
+      </button>
     </div>
   );
 }
