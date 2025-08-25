@@ -40,6 +40,19 @@ function sanitizeChatText(t){
   if (s.length > 500) s = s.slice(0,500);
   return s.trim();
 }
+function isTypingInInput() {
+  const el = document.activeElement;
+  if (!el) return false;
+  const tag = el.tagName?.toLowerCase();
+  const editable = el.getAttribute?.("contenteditable");
+  return (
+    tag === "input" ||
+    tag === "textarea" ||
+    tag === "select" ||
+    editable === "" ||
+    editable === "true"
+  );
+}
 
 /* ========================= component ========================= */
 export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, map }) {
@@ -57,7 +70,7 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
   // 내 최신 비율좌표
   const myCursorRef = useRef({ x: 0.5, y: 0.5 });
 
-  const mapReady = !!map; // 커서만 쓰지만 prop 유지
+  const mapReady = !!map; // prop 유지
 
   /* ----- 내 presence 보강: 이름/사진/색 저장 ----- */
   useEffect(() => {
@@ -145,7 +158,6 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
         };
 
         client.subscribe(`/topic/plan/${planId}/message`, onChat);
-        // 필요 시: client.subscribe(`/topic/plan/${planId}/chat`, onChat);
       },
       onDisconnect: () => setConnected(false),
     });
@@ -160,12 +172,25 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
     };
   }, [planId, token, roomKey]);
 
-  /* ----- 커서 좌표 전송 (rAF throttle) ----- */
+  /* ----- 전역 마우스 좌표 추적 (연결 여부와 무관) ----- */
   useEffect(() => {
-    if (!connected || !isLoggedIn || !stompRef.current) return;
+    const onMoveOnlyTrack = (e) => {
+      myCursorRef.current = {
+        x: clamp01(e.clientX / window.innerWidth),
+        y: clamp01(e.clientY / window.innerHeight),
+      };
+    };
+    window.addEventListener("mousemove", onMoveOnlyTrack, { passive: true });
+    return () => window.removeEventListener("mousemove", onMoveOnlyTrack);
+  }, []);
+
+  /* ----- 커서 좌표 전송 (연결 시에만 rAF throttle) ----- */
+  useEffect(() => {
+    if (!isLoggedIn || !stompRef.current) return;
 
     let ticking = false;
-    const onMove = (e) => {
+    const onMoveAndPublish = (e) => {
+      if (!connected) return;             // 연결 안 되었으면 발행 안 함
       if (ticking) return;
       ticking = true;
       requestAnimationFrame(() => {
@@ -190,8 +215,8 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
       });
     };
 
-    window.addEventListener("mousemove", onMove, { passive: true });
-    return () => window.removeEventListener("mousemove", onMove);
+    window.addEventListener("mousemove", onMoveAndPublish, { passive: true });
+    return () => window.removeEventListener("mousemove", onMoveAndPublish);
   }, [connected, isLoggedIn, planId, myMemberId, myNickname, roomKey]);
 
   /* ----- 버블 수명 관리 ----- */
@@ -232,37 +257,28 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
     return () => { window.removeEventListener("storage", onStorage); clearInterval(i); };
   }, [roomKey]);
 
-  /* ----- 채팅 모드 & 입력 ----- */
-  const [chatMode, setChatMode] = useState(false);
+  /* ----- 채팅 입력 상태 ----- */
   const [chatOpen, setChatOpen] = useState(false);
   const [chatText, setChatText] = useState("");
   const composingRef = useRef(false);
 
+  /* ----- 전역 Enter로 입력창 열기 ----- */
   useEffect(() => {
-    if (chatMode) document.body.classList.add("chat-cursor");
-    else document.body.classList.remove("chat-cursor");
-    return () => document.body.classList.remove("chat-cursor");
-  }, [chatMode]);
+    const onKey = (e) => {
+      if (e.key !== "Enter") return;
+      if (chatOpen) return;                 // 이미 열려 있으면 여기선 무시 (입력창 onKeyDown에서 처리)
+      if (!isLoggedIn) return;              // 비로그인 차단
+      if (isTypingInInput()) return;        // 다른 입력 중이면 방해하지 않음
+      e.preventDefault();
 
-  // 맵 클릭 → 입력창 오픈 (현재 커서 위치 기준)
-  useEffect(() => {
-    if (!mapReady || !window.google?.maps) return;
-    let clickL = null;
-    if (chatMode) {
-      clickL = map.addListener("click", (e) => {
-        const domEvt = e?.domEvent;
-        if (domEvt && typeof domEvt.clientX === "number") {
-          myCursorRef.current = {
-            x: clamp01(domEvt.clientX / window.innerWidth),
-            y: clamp01(domEvt.clientY / window.innerHeight),
-          };
-        }
-        setChatOpen(true);
-        setChatMode(false);
-      });
-    }
-    return () => clickL && window.google.maps.event.removeListener(clickL);
-  }, [chatMode, mapReady, map]);
+      // 현재 마우스 위치(myCursorRef 기준)에 입력창 오픈
+      setChatOpen(true);
+      // chatText 초기화는 굳이 필요 없지만, 습관적으로 비워둠
+      setChatText("");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [chatOpen, isLoggedIn]);
 
   /* ----- 채팅 전송 ----- */
   const sendChat = useCallback(() => {
@@ -363,24 +379,6 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
             placeholder="메시지 입력 후 Enter"
             aria-label="채팅 메시지 입력"
           />
-        </div>
-      )}
-
-      {/* === 우하단 FAB === */}
-      {isLoggedIn && (
-        <div className="chat-fab-wrap">
-          <button
-            type="button"
-            className={`chat-fab ${chatMode ? "chat-fab--active" : ""}`}
-            title={chatMode ? "채팅 모드: 맵을 클릭하세요" : "채팅 남기기"}
-            aria-pressed={chatMode}
-            aria-label={chatMode ? "채팅 모드 해제" : "채팅 모드 활성화"}
-            onClick={() => setChatMode((v) => !v)}
-          >
-            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden>
-              <path d="M21 15a4 4 0 0 1-4 4H9l-4 3v-3H5a4 4 0 0 1-4-4V7a4 4 0 0 1 4-4h12a4 4 0 0 1 4 4z" fill="currentColor"/>
-            </svg>
-          </button>
         </div>
       )}
     </>

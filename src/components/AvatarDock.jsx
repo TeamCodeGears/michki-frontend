@@ -1,4 +1,3 @@
-// src/components/AvatarDock.jsx
 import React, { useContext, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { LanguageContext } from "../context/LanguageContext";
