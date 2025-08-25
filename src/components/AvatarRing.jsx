@@ -1,3 +1,4 @@
+// src/components/AvatarRing.jsx
 import React, { useState } from "react";
 
 export default function AvatarRing({ picture, name, color = "#4caf50" }) {
