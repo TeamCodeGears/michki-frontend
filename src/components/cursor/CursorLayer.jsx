@@ -22,11 +22,17 @@ function formatRelative(ts){
   return `${h}시간 전`;
 }
 function getPresence(roomKey){ try{ return JSON.parse(localStorage.getItem(`presence:${roomKey}`)||"{}"); }catch{ return {}; } }
+function setPresence(roomKey, presence){
+  try { localStorage.setItem(`presence:${roomKey}`, JSON.stringify(presence || {})); } catch {}
+}
 function getColorFromPresence(roomKey, memberId){
   const p = getPresence(roomKey); return p?.[String(memberId)]?.color;
 }
 function getAvatarFromPresence(roomKey, memberId){
   const p = getPresence(roomKey); return p?.[String(memberId)]?.picture || "";
+}
+function getNameFromPresence(roomKey, memberId){
+  const p = getPresence(roomKey); return p?.[String(memberId)]?.name || p?.[String(memberId)]?.nickname || "";
 }
 function sanitizeChatText(t){
   if (!t) return "";
@@ -40,6 +46,7 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
   const token = useMemo(() => { try{ return localStorage.getItem("accessToken") || undefined; }catch{ return undefined; } }, []);
   const myMemberId = currentUser?.memberId ?? currentUser?.id ?? null;
   const myNickname = currentUser?.nickname || currentUser?.name || "Me";
+  const myAvatar = currentUser?.picture || "";
 
   const [connected, setConnected] = useState(false);
   const stompRef = useRef(null);
@@ -51,6 +58,23 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
   const myCursorRef = useRef({ x: 0.5, y: 0.5 });
 
   const mapReady = !!map; // 커서만 쓰지만 prop 유지
+
+  /* ----- 내 presence 보강: 이름/사진/색 저장 ----- */
+  useEffect(() => {
+    if (!roomKey || !myMemberId) return;
+    const p = getPresence(roomKey);
+    const cur = p[String(myMemberId)] || {};
+    const next = {
+      ...cur,
+      name: myNickname || cur.name || cur.nickname || `User ${myMemberId}`,
+      picture: myAvatar || cur.picture || "",
+      color: cur.color || hashColor(myMemberId),
+    };
+    p[String(myMemberId)] = next;
+    setPresence(roomKey, p);
+    // storage 이벤트로 타 클라이언트도 갱신
+    try { window.dispatchEvent(new StorageEvent("storage", { key: `presence:${roomKey}` })); } catch {}
+  }, [roomKey, myMemberId, myNickname, myAvatar]);
 
   /* ----- STOMP 연결 ----- */
   useEffect(() => {
@@ -69,10 +93,12 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
             setCursors((prev) => {
               const prevCur = prev[memberId];
               const presenceColor = getColorFromPresence(roomKey, memberId);
+              const presenceName  = getNameFromPresence(roomKey, memberId);
+
               const nextCur = {
                 x: clamp01(x), y: clamp01(y),
                 color: color || presenceColor || prevCur?.color || hashColor(memberId),
-                nickname: nickname || prevCur?.nickname || `User ${memberId}`,
+                nickname: nickname || presenceName || prevCur?.nickname || `User ${memberId}`,
                 ts: ts || Date.now(),
                 bubble: prevCur?.bubble,
                 avatar: prevCur?.avatar,
@@ -90,7 +116,7 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
           }catch(e){ console.error("parse mouse", e); }
         });
 
-        // 채팅 수신 → 커서에 버블 표시 (서버가 message 토픽 사용)
+        // 채팅 수신 → 커서에 버블 표시
         const onChat = (msg) => {
           try{
             const cm = JSON.parse(msg.body);
@@ -99,6 +125,7 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
 
             const pic = avatar || getAvatarFromPresence(roomKey, memberId) || "";
             const safeText = sanitizeChatText(text ?? cm.message ?? "");
+            const presenceName = getNameFromPresence(roomKey, memberId);
 
             const until = Date.now() + BUBBLE_MS;
             setCursors((prev) => {
@@ -107,7 +134,7 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
                 ...prev,
                 [memberId]: {
                   ...cur,
-                  nickname: nickname || cur.nickname || `User ${memberId}`,
+                  nickname: nickname || presenceName || cur.nickname || `User ${memberId}`,
                   color: cur.color || getColorFromPresence(roomKey, memberId) || hashColor(memberId),
                   avatar: cur.avatar || pic,
                   bubble: { text: safeText, until, ts: ts || Date.now() },
@@ -117,9 +144,8 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
           }catch(e){ console.error("parse chat", e); }
         };
 
-        // 안전하게 양쪽 구독(서버가 message만 쓰면 이게 유효)
         client.subscribe(`/topic/plan/${planId}/message`, onChat);
-        // client.subscribe(`/topic/plan/${planId}/chat`, onChat); // 필요시 유지
+        // 필요 시: client.subscribe(`/topic/plan/${planId}/chat`, onChat);
       },
       onDisconnect: () => setConnected(false),
     });
@@ -154,7 +180,7 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
             body: JSON.stringify({
               x, y,
               memberId: myMemberId || undefined,
-              nickname: myNickname,
+              nickname: myNickname, // 내 닉네임 확실히 전송
               color: getColorFromPresence(roomKey, myMemberId) || undefined,
               ts: Date.now(),
             }),
@@ -274,7 +300,7 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
       };
       try{
         stompRef.current.publish({
-          destination: `/app/plan/${planId}/message`, // ✅ 서버와 맞춤
+          destination: `/app/plan/${planId}/message`,
           headers: { "content-type": "application/json" },
           body: JSON.stringify(payload),
         });

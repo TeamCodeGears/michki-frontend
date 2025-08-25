@@ -121,7 +121,6 @@ function ScheduleMap() {
   const texts = allTexts[language];
 
   const categories = [
-    { label: texts.recommended, type: "__recommended__", icon: "⭐" },
     { label: texts.food, type: "restaurant", icon: "🍽️" },
     { label: texts.hotel, type: "lodging", icon: "🛏️" },
     { label: texts.enjoy, type: "tourist_attraction", icon: "📸" },
