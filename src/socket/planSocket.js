@@ -1,12 +1,20 @@
 import SockJS from "sockjs-client";
 import { Client } from "@stomp/stompjs";
 
-const API_BASE =
+/**
+ * API_BASE 규칙
+ * - VITE_API_BASE가 있으면 사용
+ * - 없으면 same-origin 상대경로 사용
+ */
+const RAW_BASE =
+  (typeof window !== "undefined" && window.__API_BASE__) ||
   (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_BASE) ||
-  "http://localhost:8080";
+  "";
 
-export const WS_ENDPOINT = `${API_BASE.replace(/\/$/, "")}/ws`;
+const API_BASE = RAW_BASE ? RAW_BASE.replace(/\/$/, "") : "";
+export const WS_ENDPOINT = `${API_BASE}/ws`;
 
+/** STOMP 클라이언트 생성 */
 export function createPlanStompClient({
   token,
   onConnect,
@@ -14,7 +22,6 @@ export function createPlanStompClient({
   onStompError,
 } = {}) {
   const client = new Client({
-    // 쿠키/세션을 쓰는 경우 xhr-* 전송에도 withCredentials 적용
     webSocketFactory: () =>
       new SockJS(WS_ENDPOINT, null, {
         transports: ["websocket", "xhr-streaming", "xhr-polling"],
@@ -23,7 +30,6 @@ export function createPlanStompClient({
           "xhr-polling": { withCredentials: true },
         },
       }),
-    // 토큰 인증도 병행 가능 (세션/쿠키 없이도 OK)
     connectHeaders: token ? { Authorization: `Bearer ${token}` } : {},
     debug: (str) => console.log(`[STOMP] ${str}`),
     reconnectDelay: 3000,
@@ -45,16 +51,41 @@ export function createPlanStompClient({
       console.warn("Unhandled message:", m?.headers?.destination, m?.body);
     },
   });
+
+  // 발송 내용 확인(디버그)
+  const origPublish = client.publish.bind(client);
+  client.publish = (args) => {
+    try {
+      console.log("[PUB:DEST]", args?.destination);
+      if (args?.body) {
+        try {
+          const obj = JSON.parse(args.body);
+          console.log("[PUB:BODY.keys]", Object.keys(obj));
+          console.log("[PUB:BODY.message]", obj.message);
+        } catch {
+          console.log("[PUB:BODY(raw)]", String(args.body).slice(0, 200));
+        }
+      }
+    } catch {}
+    return origPublish(args);
+  };
+
   return client;
 }
 
+/* ====== Subscribe helpers ====== */
 export function subscribePlanMouse(client, planId, onMessage) {
   return client.subscribe(`/topic/plan/${planId}/mouse`, onMessage);
 }
 export function subscribePlanChat(client, planId, onMessage) {
   return client.subscribe(`/topic/plan/${planId}/message`, onMessage);
 }
+/** ✅ 장소 변경 브로드캐스트 구독 (백엔드: /sub/plans/{planId}/place-changed) */
+export function subscribePlanPlaces(client, planId, onMessage) {
+  return client.subscribe(`/sub/plans/${planId}/place-changed`, onMessage);
+}
 
+/* ====== Publish helpers ====== */
 export function sendPlanMouse(client, planId, payload) {
   client.publish({
     destination: `/app/plan/${planId}/mouse`,
@@ -62,12 +93,39 @@ export function sendPlanMouse(client, planId, payload) {
     body: JSON.stringify(payload),
   });
 }
-export function sendPlanChat(client, planId, payload) {
+
+/** ✅ 채팅은 항상 message 키 사용 + 목적지는 /app/plan/{planId}/message */
+export function sendPlanChat(client, planId, payload, opts = {}) {
+  const { receipt, onReceipt } = opts;
+
+  const normalized = {
+    ...payload,
+    message:
+      payload?.message ??
+      payload?.text ??
+      payload?.msg ??
+      payload?.content ??
+      "",
+  };
+  delete normalized.text;
+  delete normalized.msg;
+  delete normalized.content;
+
+  if (receipt && typeof client.watchForReceipt === "function") {
+    client.watchForReceipt(receipt, () => onReceipt?.(receipt));
+  }
+
   client.publish({
-    destination: `/app/plan/${planId}/chat`,
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
+    destination: `/app/plan/${planId}/message`,
+    headers: {
+      "content-type": "application/json",
+      ...(receipt ? { receipt } : {}),
+    },
+    body: JSON.stringify(normalized),
   });
+
+  console.log("[VERIFY:SEND:RAW]", JSON.stringify(normalized));
+  console.log("[VERIFY:SEND:KEYS]", Object.keys(normalized));
 }
 
 export default createPlanStompClient;

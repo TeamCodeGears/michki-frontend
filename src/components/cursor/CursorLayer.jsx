@@ -1,6 +1,11 @@
 // src/components/cursor/CursorLayer.jsx
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { createPlanStompClient } from "../../socket/planSocket";
+import createPlanStompClient, {
+  subscribePlanMouse,
+  subscribePlanChat,
+  sendPlanMouse,
+  sendPlanChat,
+} from "../../socket/planSocket";
 import "./CursorLayer.css";
 
 const COLORS = ["#ff4d4f","#fa8c16","#fadb14","#52c41a","#1677ff","#722ed1","#eb2f96","#13c2c2","#2f54eb"];
@@ -36,9 +41,22 @@ function getNameFromPresence(roomKey, memberId){
 }
 function sanitizeChatText(t){
   if (!t) return "";
-  let s = String(t).replace(/[\u0000-\u001F\u007F]/g,""); // 제어문자 제거
+  let s = String(t).replace(/[\u0000-\u001F\u007F]/g,"");
   if (s.length > 500) s = s.slice(0,500);
   return s.trim();
+}
+function isTypingInInput() {
+  const el = document.activeElement;
+  if (!el) return false;
+  const tag = el.tagName?.toLowerCase();
+  const editable = el.getAttribute?.("contenteditable");
+  return (
+    tag === "input" ||
+    tag === "textarea" ||
+    tag === "select" ||
+    editable === "" ||
+    editable === "true"
+  );
 }
 
 /* ========================= component ========================= */
@@ -51,15 +69,12 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
   const [connected, setConnected] = useState(false);
   const stompRef = useRef(null);
 
-  // { [memberId]: {x,y,color,nickname,ts, bubble?, avatar?} }
   const [cursors, setCursors] = useState({});
-
-  // 내 최신 비율좌표
   const myCursorRef = useRef({ x: 0.5, y: 0.5 });
 
-  const mapReady = !!map; // 커서만 쓰지만 prop 유지
+  const mapReady = !!map;
 
-  /* ----- 내 presence 보강: 이름/사진/색 저장 ----- */
+  /* ----- 내 presence 보강 ----- */
   useEffect(() => {
     if (!roomKey || !myMemberId) return;
     const p = getPresence(roomKey);
@@ -72,7 +87,6 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
     };
     p[String(myMemberId)] = next;
     setPresence(roomKey, p);
-    // storage 이벤트로 타 클라이언트도 갱신
     try { window.dispatchEvent(new StorageEvent("storage", { key: `presence:${roomKey}` })); } catch {}
   }, [roomKey, myMemberId, myNickname, myAvatar]);
 
@@ -85,7 +99,7 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
         setConnected(true);
 
         // 커서 수신
-        client.subscribe(`/topic/plan/${planId}/mouse`, (msg) => {
+        subscribePlanMouse(client, planId, (msg) => {
           try{
             const { memberId, x, y, color, nickname, ts } = JSON.parse(msg.body);
             if (memberId==null) return;
@@ -116,15 +130,15 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
           }catch(e){ console.error("parse mouse", e); }
         });
 
-        // 채팅 수신 → 커서에 버블 표시
-        const onChat = (msg) => {
+        // 채팅 수신
+        subscribePlanChat(client, planId, (msg) => {
           try{
             const cm = JSON.parse(msg.body);
-            const { memberId, nickname, text, avatar, ts } = cm;
+            const { memberId, nickname, avatar, ts } = cm;
             if (memberId==null) return;
 
+            const safeText = sanitizeChatText(cm.message ?? cm.text ?? cm.msg ?? "");
             const pic = avatar || getAvatarFromPresence(roomKey, memberId) || "";
-            const safeText = sanitizeChatText(text ?? cm.message ?? "");
             const presenceName = getNameFromPresence(roomKey, memberId);
 
             const until = Date.now() + BUBBLE_MS;
@@ -142,10 +156,7 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
               };
             });
           }catch(e){ console.error("parse chat", e); }
-        };
-
-        client.subscribe(`/topic/plan/${planId}/message`, onChat);
-        // 필요 시: client.subscribe(`/topic/plan/${planId}/chat`, onChat);
+        });
       },
       onDisconnect: () => setConnected(false),
     });
@@ -160,12 +171,25 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
     };
   }, [planId, token, roomKey]);
 
-  /* ----- 커서 좌표 전송 (rAF throttle) ----- */
+  /* ----- 전역 마우스 좌표 추적 ----- */
   useEffect(() => {
-    if (!connected || !isLoggedIn || !stompRef.current) return;
+    const onMoveOnlyTrack = (e) => {
+      myCursorRef.current = {
+        x: clamp01(e.clientX / window.innerWidth),
+        y: clamp01(e.clientY / window.innerHeight),
+      };
+    };
+    window.addEventListener("mousemove", onMoveOnlyTrack, { passive: true });
+    return () => window.removeEventListener("mousemove", onMoveOnlyTrack);
+  }, []);
+
+  /* ----- 커서 좌표 전송 ----- */
+  useEffect(() => {
+    if (!isLoggedIn || !stompRef.current) return;
 
     let ticking = false;
-    const onMove = (e) => {
+    const onMoveAndPublish = (e) => {
+      if (!connected) return;
       if (ticking) return;
       ticking = true;
       requestAnimationFrame(() => {
@@ -174,24 +198,20 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
         myCursorRef.current = { x, y };
 
         try{
-          stompRef.current.publish({
-            destination: `/app/plan/${planId}/mouse`,
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              x, y,
-              memberId: myMemberId || undefined,
-              nickname: myNickname, // 내 닉네임 확실히 전송
-              color: getColorFromPresence(roomKey, myMemberId) || undefined,
-              ts: Date.now(),
-            }),
+          sendPlanMouse(stompRef.current, planId, {
+            x, y,
+            memberId: myMemberId || undefined,
+            nickname: myNickname,
+            color: getColorFromPresence(roomKey, myMemberId) || undefined,
+            ts: Date.now(),
           });
         }catch{}
         ticking = false;
       });
     };
 
-    window.addEventListener("mousemove", onMove, { passive: true });
-    return () => window.removeEventListener("mousemove", onMove);
+    window.addEventListener("mousemove", onMoveAndPublish, { passive: true });
+    return () => window.removeEventListener("mousemove", onMoveAndPublish);
   }, [connected, isLoggedIn, planId, myMemberId, myNickname, roomKey]);
 
   /* ----- 버블 수명 관리 ----- */
@@ -232,44 +252,32 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
     return () => { window.removeEventListener("storage", onStorage); clearInterval(i); };
   }, [roomKey]);
 
-  /* ----- 채팅 모드 & 입력 ----- */
-  const [chatMode, setChatMode] = useState(false);
+  /* ----- 채팅 입력 상태 ----- */
   const [chatOpen, setChatOpen] = useState(false);
   const [chatText, setChatText] = useState("");
   const composingRef = useRef(false);
 
+  /* ----- 전역 Enter로 입력창 열기 ----- */
   useEffect(() => {
-    if (chatMode) document.body.classList.add("chat-cursor");
-    else document.body.classList.remove("chat-cursor");
-    return () => document.body.classList.remove("chat-cursor");
-  }, [chatMode]);
-
-  // 맵 클릭 → 입력창 오픈 (현재 커서 위치 기준)
-  useEffect(() => {
-    if (!mapReady || !window.google?.maps) return;
-    let clickL = null;
-    if (chatMode) {
-      clickL = map.addListener("click", (e) => {
-        const domEvt = e?.domEvent;
-        if (domEvt && typeof domEvt.clientX === "number") {
-          myCursorRef.current = {
-            x: clamp01(domEvt.clientX / window.innerWidth),
-            y: clamp01(domEvt.clientY / window.innerHeight),
-          };
-        }
-        setChatOpen(true);
-        setChatMode(false);
-      });
-    }
-    return () => clickL && window.google.maps.event.removeListener(clickL);
-  }, [chatMode, mapReady, map]);
+    const onKey = (e) => {
+      if (e.key !== "Enter") return;
+      if (chatOpen) return;
+      if (!isLoggedIn) return;
+      if (isTypingInInput()) return;
+      e.preventDefault();
+      setChatOpen(true);
+      setChatText("");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [chatOpen, isLoggedIn]);
 
   /* ----- 채팅 전송 ----- */
   const sendChat = useCallback(() => {
     const safe = sanitizeChatText(chatText);
     if (!safe) { setChatOpen(false); setChatText(""); return; }
 
-    // (1) 로컬 즉시 버블(연결과 무관)
+    // (1) 로컬 버블
     const until = Date.now() + BUBBLE_MS;
     setCursors((prev) => {
       const cur = prev[myMemberId] || myCursorRef.current || {};
@@ -287,24 +295,23 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
       };
     });
 
-    // (2) 서버 발행은 연결된 경우에만
+    // (2) 서버 발행 — ✅ 항상 `message` 키
     if (connected && stompRef.current && planId) {
-      const id = `${myMemberId || "me"}-${Date.now()}`;
       const payload = {
-        id,
-        text: safe,
-        memberId: myMemberId || undefined,
+        id: `${myMemberId || "me"}-${Date.now()}`,
+        message: safe,
+        memberId: myMemberId ?? null,
+        planId: planId ?? null,
         nickname: myNickname,
         avatar: getAvatarFromPresence(roomKey, myMemberId) || undefined,
         ts: Date.now(),
       };
+      console.log("[VERIFY:CALL:sendPlanChat] payload.message =", payload.message);
       try{
-        stompRef.current.publish({
-          destination: `/app/plan/${planId}/message`,
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-      }catch{}
+        sendPlanChat(stompRef.current, planId, payload, { receipt: `rcpt-${Date.now()}` });
+      }catch(e){
+        console.error("[CHAT:PUBLISH:ERROR]", e);
+      }
     }
 
     setChatText("");
@@ -340,7 +347,7 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
         })}
       </div>
 
-      {/* === 채팅 입력창 (내 현재 커서 위치에 뜸) === */}
+      {/* === 채팅 입력창 === */}
       {isLoggedIn && chatOpen && (
         <div className="cursor-chat-input" style={{ left: `${myPos.x * 100}vw`, top: `${myPos.y * 100}vh` }}>
           <input
@@ -363,24 +370,6 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
             placeholder="메시지 입력 후 Enter"
             aria-label="채팅 메시지 입력"
           />
-        </div>
-      )}
-
-      {/* === 우하단 FAB === */}
-      {isLoggedIn && (
-        <div className="chat-fab-wrap">
-          <button
-            type="button"
-            className={`chat-fab ${chatMode ? "chat-fab--active" : ""}`}
-            title={chatMode ? "채팅 모드: 맵을 클릭하세요" : "채팅 남기기"}
-            aria-pressed={chatMode}
-            aria-label={chatMode ? "채팅 모드 해제" : "채팅 모드 활성화"}
-            onClick={() => setChatMode((v) => !v)}
-          >
-            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden>
-              <path d="M21 15a4 4 0 0 1-4 4H9l-4 3v-3H5a4 4 0 0 1-4-4V7a4 4 0 0 1 4-4h12a4 4 0 0 1 4 4z" fill="currentColor"/>
-            </svg>
-          </button>
         </div>
       )}
     </>

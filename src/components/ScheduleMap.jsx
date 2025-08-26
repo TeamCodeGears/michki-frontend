@@ -1,9 +1,9 @@
-// src/components/ScheduleMap.jsx
 import { useState, useRef, useEffect, useContext, useMemo } from "react";
 import { GoogleMap, useJsApiLoader, Marker, Autocomplete } from "@react-google-maps/api";
 import { useLocation, useNavigate, useOutletContext, useParams } from "react-router-dom";
 
 import styles from "./ScheduleMap.module.css";
+import createPlanStompClient, { subscribePlanPlaces } from "../socket/planSocket";
 
 import RoomPresenceDock from "./RoomPresenceDock";
 import michikiLogo from "../assets/michiki-logo.webp";
@@ -26,7 +26,7 @@ import {
   listPlaces,
   recommendPlaces,
 } from "../api/place";
-import { leavePlan } from "../api/plans";
+import { leavePlan, getSharedPlan } from "../api/plans";
 import InlineLoginFab from "./InlineLoginFab";
 import CursorLayer from "./cursor/CursorLayer";
 import "./cursor/CursorLayer.css";
@@ -44,7 +44,7 @@ const lsKey = (roomKey) => `pins:${roomKey}`;
 
 function toUiPin(p, fallbackOrder = 1) {
   return {
-    id: p.id,
+    id: p.id ?? p.placeId,
     name: p.name || "장소",
     address: "",
     photo: null,
@@ -56,17 +56,25 @@ function toUiPin(p, fallbackOrder = 1) {
   };
 }
 
-// ---- 사진/주소 캐시 ----
+/* ============ 사진/주소 캐시(TTL) ============ */
+const PHOTO_TTL_MS = 30 * 60 * 1000;
+
 const getCachedPhoto = (pid) => {
   try {
-    return localStorage.getItem(`placePhoto:${pid}`) || null;
+    const raw = localStorage.getItem(`placePhoto:${pid}`);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (!obj?.url || !obj?.ts) return null;
+    if (Date.now() - obj.ts > PHOTO_TTL_MS) return null;
+    return obj.url;
   } catch {
     return null;
   }
 };
 const setCachedPhoto = (pid, url) => {
   try {
-    localStorage.setItem(`placePhoto:${pid}`, url);
+    if (!url) return;
+    localStorage.setItem(`placePhoto:${pid}`, JSON.stringify({ url, ts: Date.now() }));
   } catch {}
 };
 const getCachedAddress = (pid) => {
@@ -78,6 +86,7 @@ const getCachedAddress = (pid) => {
 };
 const setCachedAddress = (pid, a) => {
   try {
+    if (!a) return;
     localStorage.setItem(`placeAddr:${pid}`, a);
   } catch {}
 };
@@ -93,17 +102,18 @@ const formatKDate = (d) =>
   d instanceof Date && !isNaN(d) ? d.toLocaleDateString("ko-KR").replace(/\./g, ".").replace(/\s/g, "") : "날짜 미지정";
 
 function ScheduleMap() {
-  useEffect(() => {
-    document.body.classList.add("hide-native-cursor");
-    return () => document.body.classList.remove("hide-native-cursor");
-  }, []);
   const location = useLocation();
   const navigate = useNavigate();
   const { user, isLoggedIn, setIsLoggedIn, setUser } = useOutletContext() || {};
-  const { planId: planIdFromParam } = useParams();
+  const { planId: planIdFromParam, shareURI } = useParams();
 
-  const { destination, title: incomingTitle, startDate: incomingStart, endDate: incomingEnd, planId: planIdFromState } =
-    location.state || {};
+  const {
+    destination,
+    title: incomingTitle,
+    startDate: incomingStart,
+    endDate: incomingEnd,
+    planId: planIdFromState,
+  } = location.state || {};
 
   const qs = new URLSearchParams(location.search);
   const planIdFromQuery = qs.get("planId") || undefined;
@@ -111,10 +121,16 @@ function ScheduleMap() {
   const edFromQuery = qs.get("ed");
   const titleFromQuery = qs.get("t");
 
-  const planId = planIdFromParam || planIdFromState || planIdFromQuery || undefined;
+  // 공유 모드 여부
+  const isSharedMode = !!shareURI;
+
+  // 일반 모드에서는 planId 사용
+  const planId = isSharedMode ? undefined : (planIdFromParam || planIdFromState || planIdFromQuery || undefined);
+
+  // roomKey
   const roomKey = useMemo(
-    () => planId || destination || location.pathname || "schedule-room",
-    [planId, destination, location.pathname]
+    () => (isSharedMode ? `share:${shareURI}` : (planId || destination || location.pathname || "schedule-room")),
+    [isSharedMode, shareURI, planId, destination, location.pathname]
   );
 
   const { language } = useContext(LanguageContext);
@@ -158,7 +174,41 @@ function ScheduleMap() {
   const [isLeaving, setIsLeaving] = useState(false);
   const [isLoadingPins, setIsLoadingPins] = useState(false);
 
-  const isReadOnly = !isLoggedIn;
+  // 읽기 전용 여부
+  const readOnly = isSharedMode ? true : !isLoggedIn;
+
+  // 커서 숨김 (편집 가능일 때만)
+  useEffect(() => {
+    if (!readOnly) {
+      document.body.classList.add("hide-native-cursor");
+      return () => document.body.classList.remove("hide-native-cursor");
+    } else {
+      document.body.classList.remove("hide-native-cursor");
+    }
+  }, [readOnly]);
+
+  // ===== 장소 변경 브로드캐스트 구독 (웹소켓)
+  useEffect(() => {
+    if (!planId || isSharedMode) return;
+
+    const token = localStorage.getItem("accessToken") || null;
+    let sub;
+    const client = createPlanStompClient({
+      token,
+      onConnect: () => {
+        sub = subscribePlanPlaces(client, planId, () => {
+          refreshPinsFromServer();
+        });
+      },
+    });
+
+    client.activate();
+
+    return () => {
+      try { sub?.unsubscribe(); } catch {}
+      try { client.deactivate(); } catch {}
+    };
+  }, [planId, isSharedMode, dateRange]); // 날짜 바뀌어도 목록 재구독 유지
 
   // 목적지 이동
   useEffect(() => {
@@ -192,14 +242,56 @@ function ScheduleMap() {
     if (destination) setSearchInput(destination);
   }, [incomingTitle, incomingStart, incomingEnd, destination, sdFromQuery, edFromQuery, titleFromQuery]);
 
-  // 플랜 정보 로드
+  // 플랜 정보 로드 (공유/일반)
   useEffect(() => {
-    const needsFetch = planId && !(incomingTitle && incomingStart && incomingEnd);
-    if (!needsFetch || !API_BASE) return;
+    const load = async () => {
+      if (isSharedMode) {
+        try {
+          setIsLoadingPins(true);
+          const data = await getSharedPlan(encodeURIComponent(shareURI));
+          setTitle(data.title ?? "여행");
 
-    const token = localStorage.getItem("accessToken");
+          if (data.startDate && data.endDate) {
+            setDateRange([new Date(data.startDate), new Date(data.endDate)]);
+          }
 
-    (async () => {
+          if (data.startDate && data.endDate) {
+            const sd = new Date(data.startDate);
+            const ed = new Date(data.endDate);
+            const days = getDaysArr(sd, ed);
+            const dayIndexByIso = new Map(days.map((d, i) => [ymd(d), i]));
+            const groups = Array.from({ length: days.length }, () => []);
+
+            (data.places || [])
+              .slice()
+              .sort((a, b) =>
+                (a.travelDate || "").localeCompare(b.travelDate || "") ||
+                (a.orderInDay ?? 0) - (b.orderInDay ?? 0)
+              )
+              .forEach((p) => {
+                const idx = dayIndexByIso.get((p.travelDate || "").slice(0, 10));
+                if (idx == null) return;
+                groups[idx].push(toUiPin(p, (groups[idx].length || 0) + 1));
+              });
+
+            setPinsByDay(groups);
+          } else {
+            const arr = (data.places || []).map((p, i) => toUiPin(p, i + 1));
+            setPinsByDay([arr]);
+          }
+        } catch (err) {
+          console.error("공유 플랜 로드 실패:", err);
+          alert("유효하지 않은 공유 링크이거나 만료되었습니다.");
+        } finally {
+          setIsLoadingPins(false);
+        }
+        return;
+      }
+
+      // 일반
+      const needsFetch = planId && !(incomingTitle && incomingStart && incomingEnd);
+      if (!needsFetch || !API_BASE) return;
+      const token = localStorage.getItem("accessToken");
       try {
         const headers = { "Content-Type": "application/json" };
         if (token) headers.Authorization = `Bearer ${token}`;
@@ -211,8 +303,11 @@ function ScheduleMap() {
       } catch (err) {
         console.error("플랜 로드 실패:", err);
       }
-    })();
-  }, [planId, incomingTitle, incomingStart, incomingEnd]);
+    };
+
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSharedMode, shareURI, planId, incomingTitle, incomingStart, incomingEnd]);
 
   const { isLoaded } = useJsApiLoader({ googleMapsApiKey: GOOGLE_MAPS_API_KEY, libraries: GOOGLE_MAPS_LIBRARIES });
 
@@ -240,7 +335,7 @@ function ScheduleMap() {
 
   // 서버 핀 동기화
   const refreshPinsFromServer = async () => {
-    if (!planId || !hasValidDates) return;
+    if (!planId || !hasValidDates || isSharedMode) return;
     const all = await listPlaces(planId);
     const dayIndexByIso = new Map(getDaysArr(startDate, endDate).map((d, i) => [ymd(d), i]));
     const groups = Array.from({ length: getDaysArr(startDate, endDate).length }, () => []);
@@ -258,6 +353,8 @@ function ScheduleMap() {
   useEffect(() => {
     const loadPins = async () => {
       if (!hasValidDates) return;
+      if (isSharedMode) return;
+
       const blank = Array.from({ length: daysArr.length }, () => []);
       setIsLoadingPins(true);
       try {
@@ -279,13 +376,13 @@ function ScheduleMap() {
       }
     };
     loadPins();
-  }, [planId, roomKey, hasValidDates, startDate, endDate]); // eslint-disable-line
+  }, [isSharedMode, planId, roomKey, hasValidDates, startDate, endDate]); // eslint-disable-line
 
-  // 로컬 저장
+  // 로컬 저장 (비로그인 로컬방)
   useEffect(() => {
-    if (!hasValidDates || planId) return;
+    if (!hasValidDates || planId || isSharedMode) return;
     localStorage.setItem(lsKey(roomKey), JSON.stringify(pinsByDay));
-  }, [pinsByDay, planId, roomKey, hasValidDates]);
+  }, [pinsByDay, planId, roomKey, hasValidDates, isSharedMode]);
 
   // Polyline
   const polylineRef = useRef(null);
@@ -347,13 +444,17 @@ function ScheduleMap() {
           if (status === window.google.maps.places.PlacesServiceStatus.OK) {
             const pos = toPlainLatLng(place.geometry.location);
             if (!pos) return;
+            const freshPhoto =
+              place.photos?.[0]?.getUrl?.({ maxWidth: 800 }) ||
+              place.photos?.[0]?.getUrl?.() ||
+              null;
             setInfoWindow({
               position: pos,
               info: {
                 placeId: place.place_id,
                 name: place.name,
                 address: place.formatted_address,
-                photo: place.photos?.[0]?.getUrl() ?? null,
+                photo: freshPhoto,
                 rating: place.rating,
                 user_ratings_total: place.user_ratings_total,
                 phone: place.formatted_phone_number,
@@ -366,8 +467,8 @@ function ScheduleMap() {
 
     // 우클릭 → 자유 핀
     rightClickListenerRef.current = map.addListener("rightclick", async (e) => {
-      if (isReadOnly) {
-        alert("로그인 후 이용할 수 있어요.");
+      if (readOnly) {
+        alert("읽기 전용입니다. 공유 보기에서는 편집할 수 없어요.");
         return;
       }
       const latLng = e.latLng;
@@ -404,7 +505,6 @@ function ScheduleMap() {
           });
           await refreshPinsFromServer();
 
-          // 추천 탭 열려 있으면 새로고침 (닫지 않음)
           if (activeCategory === "__recommended__" && showCategoryList) {
             handleNearbySearch("__recommended__", { forceRefresh: true });
           }
@@ -450,22 +550,19 @@ function ScheduleMap() {
       }
     };
 
-    // 캐시 반영
-    for (const pin of dayPins) {
-      if (!pin.googlePlaceId) continue;
-      const cachedPhoto = getCachedPhoto(pin.googlePlaceId);
-      const cachedAddr = getCachedAddress(pin.googlePlaceId);
-      if (cachedPhoto || cachedAddr) {
-        patchPin(pin.id, { photo: pin.photo || cachedPhoto || null, address: pin.address || cachedAddr || "" });
-      }
-    }
-
-    // 네트워크 조회
     const tasks = [];
     for (const pin of dayPins) {
       if (!pin.googlePlaceId) continue;
-      const needPhoto = !pin.photo && !getCachedPhoto(pin.googlePlaceId);
-      const needAddr = !pin.address && !getCachedAddress(pin.googlePlaceId);
+
+      const cachedPhoto = getCachedPhoto(pin.googlePlaceId);
+      const cachedAddr = getCachedAddress(pin.googlePlaceId);
+
+      if (cachedPhoto || cachedAddr) {
+        patchPin(pin.id, { photo: pin.photo || cachedPhoto || null, address: pin.address || cachedAddr || "" });
+      }
+
+      const needPhoto = !cachedPhoto && !pin.photo;
+      const needAddr = !cachedAddr && !pin.address;
       if (!needPhoto && !needAddr) continue;
 
       tasks.push(
@@ -474,7 +571,10 @@ function ScheduleMap() {
             { placeId: pin.googlePlaceId, fields: ["photos", "formatted_address"] },
             (place, status) => {
               if (status === window.google.maps.places.PlacesServiceStatus.OK) {
-                const url = place?.photos?.[0]?.getUrl() || null;
+                const url =
+                  place?.photos?.[0]?.getUrl?.({ maxWidth: 800 }) ||
+                  place?.photos?.[0]?.getUrl?.() ||
+                  null;
                 const addr = place?.formatted_address || "";
                 if (url) setCachedPhoto(pin.googlePlaceId, url);
                 if (addr) setCachedAddress(pin.googlePlaceId, addr);
@@ -522,10 +622,10 @@ function ScheduleMap() {
     };
   }, []);
 
-  // 핀 추가 (정보창/검색결과)
+  // 핀 추가
   const handleAddPin = async () => {
-    if (isReadOnly) {
-      alert("로그인 후 이용할 수 있어요.");
+    if (readOnly) {
+      alert("읽기 전용입니다. 공유 보기에서는 편집할 수 없어요.");
       return;
     }
     if (!infoWindow && !searchResult) return;
@@ -562,7 +662,6 @@ function ScheduleMap() {
         });
         await refreshPinsFromServer();
 
-        // 추천 탭 열려 있으면 새로고침 (닫지 않음)
         if (activeCategory === "__recommended__" && showCategoryList) {
           handleNearbySearch("__recommended__", { forceRefresh: true });
         }
@@ -584,8 +683,8 @@ function ScheduleMap() {
 
   // 삭제
   const handleDeletePin = async (id) => {
-    if (isReadOnly) {
-      alert("로그인 후 이용할 수 있어요.");
+    if (readOnly) {
+      alert("읽기 전용입니다. 공유 보기에서는 편집할 수 없어요.");
       return;
     }
     if (planId) {
@@ -593,7 +692,6 @@ function ScheduleMap() {
         await deletePlace(planId, id);
         await refreshPinsFromServer();
 
-        // 추천 탭 열려 있으면 새로고침 (닫지 않음)
         if (activeCategory === "__recommended__" && showCategoryList) {
           handleNearbySearch("__recommended__", { forceRefresh: true });
         }
@@ -636,7 +734,10 @@ function ScheduleMap() {
         placeId: place.place_id,
         name: place.name,
         address: place.formatted_address,
-        photo: place.photos?.[0]?.getUrl() ?? null,
+        photo:
+          place.photos?.[0]?.getUrl?.({ maxWidth: 800 }) ||
+          place.photos?.[0]?.getUrl?.() ||
+          null,
       },
     });
 
@@ -648,9 +749,8 @@ function ScheduleMap() {
   // PlacesService 재사용
   const serviceRef = useRef(null);
 
-  // 주변 탐색(추천 포함) — forceRefresh 추가: 열려 있어도 새로고침
+  // 주변 탐색(추천 포함)
   const handleNearbySearch = (type, { forceRefresh = false } = {}) => {
-    // 같은 버튼 다시 누르면 닫기 (단, 강제 새로고침이면 닫지 않음)
     if (!forceRefresh && activeCategory === type && showCategoryList) {
       setShowCategoryList(false);
       setNearbyMarkers([]);
@@ -670,11 +770,15 @@ function ScheduleMap() {
     const c = map.getCenter();
     const centerPlain = toPlainLatLng(c) || { lat: c.lat(), lng: c.lng() };
 
-    // ⭐ 추천: 서버 DTO(centerLatitude, centerLongitude, zoomLevel)로 호출
+    // 추천(서버)
     if (type === "__recommended__") {
       (async () => {
         try {
           if (!planId) {
+            if (isSharedMode) {
+              alert("공유 보기에서는 추천 기능을 사용할 수 없어요.");
+              return;
+            }
             alert("플랜 ID가 없어 추천을 불러올 수 없어요.");
             return;
           }
@@ -687,7 +791,6 @@ function ScheduleMap() {
           });
           const arr = Array.isArray(res) ? res : res ? [res] : [];
 
-          // 서버 누적 카운트 필드 사용
           const pinCountOf = (r) =>
             Number(r.pinCount ?? r.count ?? r.total ?? r.hits ?? r.frequency ?? r.numPins ?? r.placeCount ?? 0) || 0;
 
@@ -696,7 +799,6 @@ function ScheduleMap() {
             .sort((a, b) => b.__pinCount - a.__pinCount)
             .slice(0, 3);
 
-          // 구글 디테일 보강
           const enrichOne = (item) =>
             new Promise((resolve) => {
               if (item.googlePlaceId) {
@@ -779,13 +881,17 @@ function ScheduleMap() {
           if (status === window.google.maps.places.PlacesServiceStatus.OK) {
             const pos = toPlainLatLng(result.geometry.location);
             if (!pos) return;
+            const freshPhoto =
+              result.photos?.[0]?.getUrl?.({ maxWidth: 800 }) ||
+              result.photos?.[0]?.getUrl?.() ||
+              null;
             setInfoWindow({
               position: pos,
               info: {
                 placeId: result.place_id,
                 name: result.name,
                 address: result.formatted_address,
-                photo: result.photos?.[0]?.getUrl() ?? null,
+                photo: freshPhoto,
                 rating: result.rating,
                 user_ratings_total: result.user_ratings_total,
                 phone: result.formatted_phone_number,
@@ -807,7 +913,7 @@ function ScheduleMap() {
   // DnD
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const handleDragEnd = async ({ active, over }) => {
-    if (isReadOnly) return;
+    if (readOnly) return;
     if (!over || String(active.id) === String(over.id)) return;
     const oldIndex = pins.findIndex((p) => String(p.id) === String(active.id));
     const newIndex = pins.findIndex((p) => String(p.id) === String(over.id));
@@ -839,18 +945,19 @@ function ScheduleMap() {
             <img src={michikiLogo} alt="Michiki" style={{ width: 36, height: 36 }} />
           </button>
 
+          {/* 공유 보기에서도 URL 복사 가능 */}
           <button
             type="button"
             onClick={async () => {
               try {
                 const url = new URL(window.location.href);
-                if (planId && startDate && endDate) {
+                if (!isSharedMode && planId && startDate && endDate) {
                   url.searchParams.set("sd", ymd(startDate));
                   url.searchParams.set("ed", ymd(endDate));
                   url.searchParams.set("t", title || "여행");
                 }
                 await navigator.clipboard.writeText(url.toString());
-                alert("일정이 클립보드에 복사되었습니다!");
+                alert("일정 링크가 클립보드에 복사되었습니다!");
               } catch {
                 alert("복사 실패! (브라우저 권한 또는 HTTPS 환경 확인)");
               }
@@ -869,47 +976,50 @@ function ScheduleMap() {
             {showPath ? texts.pathOn : texts.pathOff}
           </button>
 
-          <button
-            type="button"
-            disabled={!planId || isLeaving || isReadOnly}
-            className={`${styles.chipBtn} ${styles.leaveBtn}`}
-            onClick={async () => {
-              if (isReadOnly) {
-                alert("로그인 후 이용할 수 있어요.");
-                return;
-              }
-              if (!planId) {
-                alert("플랜 ID가 없어 방을 나갈 수 없어요.");
-                return;
-              }
-              const ok = confirm("이 방을 나가시겠어요? (마지막 1인이라면 방이 삭제됩니다)");
-              if (!ok) return;
-              try {
-                setIsLeaving(true);
-                await leavePlan(planId);
-                alert("방 나가기 완료");
-                navigate("/dashboard", { replace: true });
-              } catch (err) {
-                console.error("leave failed", err);
-                alert("방 나가기 실패: " + (err?.response?.data?.message || err?.message || "알 수 없는 오류"));
-              } finally {
-                setIsLeaving(false);
-              }
-            }}
-            title={isReadOnly ? "로그인 후 사용 가능" : !planId ? "플랜 ID 없음" : "방을 나갑니다"}
-          >
-            {isLeaving ? "나가는 중..." : texts.outRoom}
-          </button>
+          {/* 방 나가기는 일반 모드에서만 */}
+          {!isSharedMode && (
+            <button
+              type="button"
+              disabled={!planId || isLeaving || readOnly}
+              className={`${styles.chipBtn} ${styles.leaveBtn}`}
+              onClick={async () => {
+                if (readOnly) {
+                  alert("로그인 후 이용할 수 있어요.");
+                  return;
+                }
+                if (!planId) {
+                  alert("플랜 ID가 없어 방을 나갈 수 없어요.");
+                  return;
+                }
+                const ok = confirm("이 방을 나가시겠어요? (마지막 1인이라면 방이 삭제됩니다)");
+                if (!ok) return;
+                try {
+                  setIsLeaving(true);
+                  await leavePlan(planId);
+                  alert("방 나가기 완료");
+                  navigate("/dashboard", { replace: true });
+                } catch (err) {
+                  console.error("leave failed", err);
+                  alert("방 나가기 실패: " + (err?.response?.data?.message || err?.message || "알 수 없는 오류"));
+                } finally {
+                  setIsLeaving(false);
+                }
+              }}
+              title={readOnly ? "로그인 후 사용 가능" : !planId ? "플랜 ID 없음" : "방을 나갑니다"}
+            >
+              {isLeaving ? "나가는 중..." : texts.outRoom}
+            </button>
+          )}
         </div>
 
         <button
-  type="button"
-  className={`${styles.dateBtn} ${styles.dateLockedBtn}`}
-  disabled
-  aria-disabled="true"
->
-  {title || "여행"}
-</button>
+          type="button"
+          className={`${styles.dateBtn} ${styles.dateLockedBtn}`}
+          disabled
+          aria-disabled="true"
+        >
+          {title || "여행"}
+        </button>
 
         <div style={{ position: "relative", marginBottom: 1 }}>
           <button type="button" className={`${styles.dateBtn} ${styles.dateLockedBtn}`} disabled aria-disabled="true">
@@ -997,7 +1107,9 @@ function ScheduleMap() {
                 <img
                   src={
                     place.photos && place.photos[0]
-                      ? place.photos[0].getUrl?.() ?? place.photos[0].getUrl?.({ maxWidth: 120 })
+                      ? (place.photos[0].getUrl
+                          ? place.photos[0].getUrl({ maxWidth: 120 })
+                          : (place.photos[0].url || place.photos[0].uri))
                       : "https://via.placeholder.com/60?text=No+Image"
                   }
                   className={styles.nearbyThumb}
@@ -1031,7 +1143,7 @@ function ScheduleMap() {
 
         <div className={styles.pinListHead}>
           {isLoadingPins && <span className={styles.pinLoading}>불러오는 중…</span>}
-          {isReadOnly && <span style={{ marginLeft: 8, color: "#b3261e", fontSize: 12 }}>읽기 전용(로그인 필요)</span>}
+          {readOnly && <span style={{ marginLeft: 8, color: "#b3261e", fontSize: 12 }}>읽기 전용</span>}
         </div>
 
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -1044,7 +1156,7 @@ function ScheduleMap() {
                   index={idx}
                   onClick={() => handlePinClick(pin)}
                   onDelete={() => handleDeletePin(pin.id)}
-                  readOnly={isReadOnly}
+                  readOnly={readOnly}
                 />
               ))}
             </div>
@@ -1072,7 +1184,7 @@ function ScheduleMap() {
             disableDefaultUI: true,
           }}
         >
-          {/* 내 핀(빨간 마커) */}
+          {/* 내 핀 */}
           {pins.map((pin, idx) => (
             <Marker
               key={pin.id}
@@ -1087,7 +1199,7 @@ function ScheduleMap() {
             />
           ))}
 
-          {/* 카테고리/추천 결과(파란 마커) */}
+          {/* 카테고리/추천 결과 */}
           {nearbyMarkers.map((place, i) => {
             const pos = toPlainLatLng(place.geometry?.location);
             if (!pos) return null;
@@ -1115,7 +1227,14 @@ function ScheduleMap() {
             />
           )}
 
-          <CursorLayer planId={planId} currentUser={user} isLoggedIn={!!isLoggedIn} roomKey={roomKey} map={mapInstance} />
+          {/* 커서 레이어 */}
+          <CursorLayer
+            planId={planId}
+            currentUser={user}
+            isLoggedIn={!readOnly}
+            roomKey={roomKey}
+            map={mapInstance}
+          />
         </GoogleMap>
 
         {/* 모달 */}
@@ -1124,8 +1243,8 @@ function ScheduleMap() {
           open={modalOpen}
           onClose={handleModalClose}
           onCommentChange={async (comment) => {
-            if (isReadOnly) {
-              alert("로그인 후 이용할 수 있어요.");
+            if (readOnly) {
+              alert("읽기 전용입니다. 공유 보기에서는 편집할 수 없어요.");
               return;
             }
             setPinsByDay((arr) =>
@@ -1143,22 +1262,48 @@ function ScheduleMap() {
               alert("메모 수정 실패: " + err.message);
             }
           }}
-          readOnly={isReadOnly}
+          readOnly={readOnly}
         />
       </div>
 
-      <RoomPresenceDock roomKey={roomKey} currentUser={user} planId={planId} />
-
-      {isReadOnly && (
+      {/* 로그인 FAB (공유→로그인 후 자동 참여 → 일반모드로 전환) */}
+      {!isSharedMode && readOnly && (
         <InlineLoginFab
-          onLoggedIn={(u) => {
+          onLoggedIn={async (u) => {
             setIsLoggedIn?.(true);
             setUser?.(u);
-            refreshPinsFromServer?.();
+
+            // 공유 링크로 온 상태였다면, 먼저 자동 참여 시도 후 일반 라우트로 전환
+            if (isSharedMode && shareURI) {
+              try {
+                const data = await getSharedPlan(encodeURIComponent(shareURI)); // 서버가 join 처리
+                const joinedPlanId = data?.planId;
+                if (joinedPlanId) {
+                  navigate(`/plans/${joinedPlanId}`, {
+                    replace: true,
+                    state: {
+                      title: data?.title,
+                      startDate: data?.startDate,
+                      endDate: data?.endDate,
+                      planId: joinedPlanId,
+                    },
+                  });
+                  return;
+                }
+              } catch (e) {
+                console.warn("re-join via shareURI failed:", e);
+              }
+            }
+
+            // 일반 모드면 핀 갱신
+            await refreshPinsFromServer?.();
           }}
           planId={planId}
         />
       )}
+
+      {/* 일반 모드에서만 프레즌스 도크 */}
+      {!isSharedMode && <RoomPresenceDock roomKey={roomKey} currentUser={user} planId={planId} />}
     </div>
   );
 }
