@@ -25,7 +25,7 @@ function getPresence(roomKey) {
   catch { return {}; }
 }
 function setPresence(roomKey, presence) {
-  try { localStorage.setItem(`presence:${roomKey}`, JSON.stringify(presence || {})); } catch {}
+  try { localStorage.setItem(`presence:${roomKey}`, JSON.stringify(presence || {})); } catch { }
 }
 function getAvatarFromPresence(roomKey, memberId) {
   const p = getPresence(roomKey); return p?.[String(memberId)]?.picture || "";
@@ -90,7 +90,7 @@ export default function CursorLayer({
     };
     p[String(myMemberId)] = next;
     setPresence(roomKey, p);
-    try { window.dispatchEvent(new StorageEvent("storage", { key: `presence:${roomKey}` })); } catch {}
+    try { window.dispatchEvent(new StorageEvent("storage", { key: `presence:${roomKey}` })); } catch { }
   }, [roomKey, myMemberId, myNickname, myAvatar]);
 
   /* ----- STOMP 연결 ----- */
@@ -137,6 +137,17 @@ export default function CursorLayer({
         subscribePlanChat(client, planId, (msg) => {
           try {
             const cm = JSON.parse(msg.body);
+            if (cm?.__sys === "COLOR") {
+              const { memberId, color } = cm;
+              if (memberId == null || !color) return;
+              setCursors((prev) => {
+                const cur = prev[memberId] || {};
+                // 즉시 커서색 반영 (부모 colorsByMember 반영을 기다리지 않음)
+                return { ...prev, [memberId]: { ...cur, color } };
+              });
+              return;
+            }
+
             const { memberId, nickname, avatar, ts } = cm;
             if (memberId == null) return;
 
@@ -169,7 +180,7 @@ export default function CursorLayer({
     client.activate();
 
     return () => {
-      try { client.deactivate(); } catch {}
+      try { client.deactivate(); } catch { }
       stompRef.current = null;
       setConnected(false);
     };
@@ -314,13 +325,13 @@ export default function CursorLayer({
       <div className="cursor-layer" aria-live="polite" aria-atomic="false">
         {Object.entries(cursors).map(([memberId, cur]) => {
           const left = `${(cur.x ?? 0.5) * 100}vw`;
-          const top  = `${(cur.y ?? 0.5) * 100}vh`;
+          const top = `${(cur.y ?? 0.5) * 100}vh`;
           // 서버색 없을 때만 임시 색(최소한의 가독성)
           const color = cur.color || "#1677ff";
           return (
             <div key={memberId} className="cursor-item" style={{ left, top }}>
               <svg className="cursor-icon" width="22" height="22" viewBox="0 0 24 24" style={{ stroke: color, fill: "white" }} xmlns="http://www.w3.org/2000/svg" aria-hidden>
-                <path d="M22 2 15 22 11 13 2 9 22 2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M22 2 15 22 11 13 2 9 22 2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
               <div className="cursor-name" style={{ background: color }}>
                 {cur.nickname || `User ${memberId}`}

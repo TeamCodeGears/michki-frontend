@@ -3,11 +3,7 @@ import { GoogleMap, useJsApiLoader, Marker, Autocomplete } from "@react-google-m
 import { useLocation, useNavigate, useOutletContext, useParams } from "react-router-dom";
 
 import styles from "./ScheduleMap.module.css";
-import createPlanStompClient, {
-  subscribePlanPlaces,
-  subscribePlanChat,
-  sendPlanChat,
-} from "../socket/planSocket";
+import createPlanStompClient, { subscribePlanPlaces, subscribePlanChat, sendPlanChat } from "../socket/planSocket";
 
 import RoomPresenceDock from "./RoomPresenceDock";
 import michikiLogo from "../assets/michiki-logo.webp";
@@ -320,11 +316,24 @@ function ScheduleMap() {
         subChat = subscribePlanChat(client, planId, (frame) => {
           try {
             const msg = JSON.parse(frame.body || "{}");
-            if (msg?.__sys !== "CENTER") return;
-            if (msg.senderId && msg.senderId === senderIdRef.current) return; // 루프 방지
-            const p = msg.center;
-            if (!p || typeof p.lat !== "number" || typeof p.lng !== "number") return;
-            applyCenter(p, typeof msg.zoom === "number" ? msg.zoom : 14, { shouldBroadcast: false });
+            if (msg?.__sys === "CENTER") {
+              if (msg.senderId && msg.senderId === senderIdRef.current) return;
+              const p = msg.center;
+              if (!p || typeof p.lat !== "number" || typeof p.lng !== "number") return;
+              applyCenter(p, typeof msg.zoom === "number" ? msg.zoom : 14, { shouldBroadcast: false });
+              return;
+            }
+            if (msg?.__sys === "COLOR") {
+              const { memberId, color } = msg;
+              if (!memberId || !color) return;
+              // members 즉시 반영 → colorsByMember(useMemo) 재계산 → CursorLayer/Avatar 즉시 갱신
+              setMembers((prev) =>
+                prev.map((m) =>
+                  String(m.memberId ?? m.id) === String(memberId) ? { ...m, color } : m
+                )
+              );
+              return;
+            }
           } catch { }
         });
 
@@ -1464,7 +1473,16 @@ function ScheduleMap() {
           currentUser={user}
           planId={planId}
           colorsByMember={colorsByMember}
-          onColorSaved={refetchMembers}   // ← 추가
+          onColorSaved={({ memberId, color }) => {
+            if (!memberId || !color) { return; }
+            setMembers(prev =>
+              prev.map(m =>
+                String(m.memberId ?? m.id) === String(memberId)
+                  ? { ...m, color }
+                  : m
+              )
+            );
+          }}
         />
       )}
     </div>

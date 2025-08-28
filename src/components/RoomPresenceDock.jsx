@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { changeColor, getPlan, getMyColorViaPlan, markNotificationsRead } from "../api/plans";
-import createPlanStompClient from "../socket/planSocket";
+import createPlanStompClient, { sendPlanChat } from "../socket/planSocket";
 
 /* ========================= helpers & constants ========================= */
 
@@ -115,6 +115,7 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId, colorsB
   const dockRef = useRef(null);
   const didRunRef = useRef(false);
   const stompReadyRef = useRef(false);
+  const stompRef = useRef(null);
   const initialSyncedRef = useRef(false);
   const lastJoinTsRef = useRef(0);
   const audioRef = useRef(null);
@@ -243,6 +244,7 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId, colorsB
       onStompError: () => (stompReadyRef.current = false),
     });
 
+    stompRef.current = client;
     client.activate();
 
     let sub;
@@ -328,6 +330,7 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId, colorsB
     return () => {
       try { sub?.unsubscribe(); } catch { }
       try { client.deactivate(); } catch { }
+      stompRef.current = null;
       stompReadyRef.current = false;
     };
   }, [planId, me]);
