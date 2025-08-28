@@ -1,6 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { changeColor, getPlan, getMyColorViaPlan, markNotificationsRead } from "../api/plans";
-import createPlanStompClient, { sendPlanChat } from "../socket/planSocket";
+import { getPlan, getMyColorViaPlan, markNotificationsRead } from "../api/plans";
+import createPlanStompClient, {
+  // ✅ 추가된 헬퍼들
+  subscribePlanOnline,
+  subscribePlanColor,
+  sendPlanColorChange,
+  // 기존에 쓰던 채팅 브로드캐스트가 필요하면 유지
+  sendPlanChat,
+} from "../socket/planSocket";
 
 /* ========================= helpers & constants ========================= */
 
@@ -191,7 +198,7 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId, colorsB
           nickname: me.nickname,
         });
         setServerMyColor(c ?? null);
-        await onColorSaved?.();   // ← 저장 후 멤버 재조회 트리거
+        await onColorSaved?.();
       } catch (e) {
         const sc = e?.response?.status;
         if (sc === 404) console.warn(`Plan ${planId} not found/inaccessible.`);
@@ -207,7 +214,7 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId, colorsB
           ...store[me.id],
           name: me.name,
           picture: pic,
-          color: (serverMyColor ?? store[me.id].color ?? null),
+          color: serverMyColor ?? store[me.id].color ?? null,
           ts: store[me.id].ts ?? now,
         };
       }
@@ -230,26 +237,25 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId, colorsB
       delete s[me.id];
       setPresence(roomKey, s);
     };
-  }, [roomKey, me, planId, serverMyColor]);
+  }, [roomKey, me, planId, serverMyColor, onColorSaved]);
 
-  /* ==== STOMP 온라인 목록 ==== */
+  /* ==== STOMP 온라인 목록 & 색상 변경 구독 ==== */
   useEffect(() => {
     if (!planId || !me) return;
 
     const token = localStorage.getItem("accessToken") || null;
     const client = createPlanStompClient({
       token,
-      onConnect: () => (stompReadyRef.current = true),
       onDisconnect: () => (stompReadyRef.current = false),
       onStompError: () => (stompReadyRef.current = false),
     });
 
     stompRef.current = client;
-    client.activate();
 
-    let sub;
-    const topic = `/topic/plan/${planId}/online`;
+    let subOnline;
+    let subColor;
 
+    // 1) 먼저 핸들러들을 선언
     const handleOnlineListMsg = (msg) => {
       try {
         const list = JSON.parse(msg.body || "[]");
@@ -260,7 +266,6 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId, colorsB
         const prevIds = memberIdsRef.current;
         const now = Date.now();
 
-        // 1) 서버 목록을 상태로 병합
         let next = list.map((m, idx) => {
           const idStr = String(m.memberId ?? m.id);
           const prevItem = prevById.get(idStr);
@@ -274,35 +279,28 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId, colorsB
             name: m.nickname || m.name || prevItem?.name || "User",
             nickname: m.nickname || m.name || prevItem?.nickname || "User",
             picture,
-            color: (m.color ?? prevItem?.color ?? null),
-            ts: prevItem?.ts ?? m.joinedAt ?? (now + idx),
+            color: m.color ?? prevItem?.color ?? null,
+            ts: prevItem?.ts ?? m.joinedAt ?? now + idx,
           };
         });
 
-        // 2) presence 스토어를 서버 색/이름/사진으로 동기화 (→ CursorLayer와 일치)
-        {
-          const store = getPresence(roomKey);
-          next.forEach((m) => {
-            const old = store[m.id] || {};
-            store[m.id] = {
-              ...old,
-              id: m.id,
-              name: m.name,
-              picture: m.picture,
-              color: m.color ?? old.color ?? null,
-              ts: old.ts ?? m.ts,
-            };
-          });
-          setPresence(roomKey, store);
-        }
+        const store = getPresence(roomKey);
+        next.forEach((m) => {
+          const old = store[m.id] || {};
+          store[m.id] = {
+            ...old,
+            id: m.id,
+            name: m.name,
+            picture: m.picture,
+            color: m.color ?? old.color ?? null,
+            ts: old.ts ?? m.ts,
+          };
+        });
+        setPresence(roomKey, store);
 
-        // 4) 정렬(입장 순)
         next.sort((a, b) => (a.ts || 0) - (b.ts || 0));
-
-        // 5) 상태 반영
         setMembers(next);
 
-        // 6) 벨소리/읽음
         const currentIds = new Set(list.map((m) => String(m.memberId ?? m.id)));
         let someoneNew = false;
         currentIds.forEach((id) => {
@@ -322,18 +320,57 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId, colorsB
       } catch { }
     };
 
-    client.onConnect = () => {
-      stompReadyRef.current = true;
-      sub = client.subscribe(topic, handleOnlineListMsg);
+    const handleColorMsg = (msg) => {
+      try {
+        const raw = JSON.parse(msg.body || "null");
+
+        // 1) 권장 payload: { memberId, color }
+        if (raw && typeof raw === "object" && "memberId" in raw && "color" in raw) {
+          const memberId = String(raw.memberId);
+          const color = String(raw.color);
+
+          // presence 업데이트
+          const store = getPresence(roomKey);
+          if (!store[memberId]) store[memberId] = { id: memberId, ts: Date.now() };
+          store[memberId].color = color;
+          setPresence(roomKey, store);
+
+          // UI 반영
+          setMembers(prev =>
+            prev.map(m => (String(m.memberId ?? m.id) === memberId ? { ...m, color } : m))
+          );
+          return;
+        }
+
+        // 2) 과거 호환: 단순 문자열이면 누가 바꿨는지 몰라서 스킵
+        if (typeof raw === "string") {
+          console.warn("[color] payload는 문자열만 수신됨. memberId가 없어 적용 불가:", raw);
+        }
+      } catch (e) {
+        console.warn("handleColorMsg parse error:", e);
+      }
     };
 
+
+    // 2) onConnect를 한 번만 설정 (activate 이전!)
+    client.onConnect = () => {
+      stompReadyRef.current = true;
+      subOnline = subscribePlanOnline(client, planId, handleOnlineListMsg);
+      subColor = subscribePlanColor(client, planId, handleColorMsg);
+    };
+
+    // 3) 이제 activate
+    client.activate();
+
     return () => {
-      try { sub?.unsubscribe(); } catch { }
+      try { subOnline?.unsubscribe(); } catch { }
+      try { subColor?.unsubscribe(); } catch { }
       try { client.deactivate(); } catch { }
       stompRef.current = null;
       stompReadyRef.current = false;
     };
-  }, [planId, me]);
+  }, [planId, me, roomKey]);
+
 
   /* ==== UI ==== */
 
@@ -350,7 +387,6 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId, colorsB
     const s = new Set();
     members.forEach((m) => {
       if (!m) return;
-      // 다른 사람만 넣음
       if (!currentUser || String(m.id) !== String(getIdStr(currentUser))) {
         if (m.color) s.add(m.color);
       }
@@ -374,10 +410,23 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId, colorsB
     // UI 즉시 반영
     setMembers((prev) => prev.map((m) => (m.id === me.id ? { ...m, color: hex } : m)));
 
-    // 서버 저장
     try {
-      await changeColor(planId, hex);
+      // ✅ REST 저장 대신 STOMP 브로드캐스트만 사용
+      if (stompRef.current && stompReadyRef.current) {
+        sendPlanColorChange(stompRef.current, planId, me.memberId ?? me.id, hex);
+      }
       setServerMyColor(hex);
+      onColorSaved?.({ memberId: me.memberId ?? me.id, color: hex });
+
+      // (선택) 기존 채팅 채널 우회 브로드캐스트 유지하고 싶으면 아래 주석 해제
+      // if (stompRef.current) {
+      //   sendPlanChat(stompRef.current, planId, {
+      //     __sys: "COLOR",
+      //     memberId: me.memberId ?? me.id,
+      //     color: hex,
+      //     ts: Date.now(),
+      //   });
+      // }
     } catch (e) {
       console.error("색 저장 실패:", e?.response?.status || e?.message);
     } finally {
@@ -409,9 +458,15 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId, colorsB
             const pic = normalizeGooglePhoto(m.picture);
             const initial = m.name || "User";
             const ringColor = (() => {
+              // 1순위: 실시간 브로드캐스트로 갱신되는 m.color
+              if (m.color) return m.color;
+              // 2순위: 부모가 내려준 서버 스냅샷(colorsByMember)
               const srv = colorsByMember?.get?.(String(m.memberId ?? m.id));
-              return srv ?? m.color ?? (isMe ? "#8a2be2" : "#ccc");
+              if (srv) return srv;
+              // 3순위: 기본값
+              return isMe ? "#8a2be2" : "#ccc";
             })();
+
             return (
               <AvatarRing
                 key={m.id}

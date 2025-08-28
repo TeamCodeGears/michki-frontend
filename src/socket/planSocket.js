@@ -66,7 +66,7 @@ export function createPlanStompClient({
           console.log("[PUB:BODY(raw)]", String(args.body).slice(0, 200));
         }
       }
-    } catch {}
+    } catch { }
     return origPublish(args);
   };
 
@@ -126,6 +126,32 @@ export function sendPlanChat(client, planId, payload, opts = {}) {
 
   console.log("[VERIFY:SEND:RAW]", JSON.stringify(normalized));
   console.log("[VERIFY:SEND:KEYS]", Object.keys(normalized));
+
+
 }
+
+/* ====== Subscribe helpers ====== */
+
+// 👇 온라인 멤버 목록 브로드캐스트 구독
+export function subscribePlanOnline(client, planId, onMessage) {
+  return client.subscribe(`/topic/plan/${planId}/online`, onMessage);
+}
+
+// 👇 색상 변경 브로드캐스트 구독
+export function subscribePlanColor(client, planId, onMessage) {
+  return client.subscribe(`/topic/plan/${planId}/color`, onMessage);
+}
+
+/* ====== Publish helpers ====== */
+
+// 👇 색상 변경 요청 (백엔드 @MessageMapping("/colorChange"))
+export function sendPlanColorChange(client, planId, memberId, color) {
+  client.publish({
+    destination: `/app/colorChange`,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ planId, memberId, color }),
+  });
+}
+
 
 export default createPlanStompClient;

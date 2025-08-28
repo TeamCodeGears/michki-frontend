@@ -205,7 +205,7 @@ export const reorderPlaces = async (planId, travelDate, places) => {
       {
         travelDate,
         places: places.map((p) => ({
-          placeId: p.placeId,
+          placeId: p.placeId ?? p.id,  // <- id도 허용
           orderInDay: p.orderInDay,
         })),
       },
@@ -223,13 +223,13 @@ const normalizeRecommendation = (r) => {
   const pinCount =
     Number(
       r.pinCount ??
-        r.count ??
-        r.total ??
-        r.hits ??
-        r.frequency ??
-        r.numPins ??
-        r.placeCount ??
-        0
+      r.count ??
+      r.total ??
+      r.hits ??
+      r.frequency ??
+      r.numPins ??
+      r.placeCount ??
+      0
     ) || 0;
   return {
     googlePlaceId: r.googlePlaceId ?? r.placeIdStr ?? r.google_id ?? "",

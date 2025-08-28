@@ -112,12 +112,6 @@ export async function getSharedPlan(shareURI) {
   return await fetchJson(`/plans/share/${shareURI}`);
 }
 
-// 색상 변경
-export async function changeColor(planId, hex) {
-  const color = hex.startsWith("#") ? hex : `#${hex}`;
-  return await fetchJson(`/plans/${planId}/newColor`, jsonInit({ color }));
-}
-
 // 내 색상 조회
 export async function getMyColorViaPlan(planId, { memberId, nickname }) {
   const data = await getPlan(planId);
