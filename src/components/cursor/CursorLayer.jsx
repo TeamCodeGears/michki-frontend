@@ -1,10 +1,9 @@
 // src/components/cursor/CursorLayer.jsx
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import createPlanStompClient, {
-  subscribePlanMouse,
-  subscribePlanChat,
-  sendPlanMouse,
-  sendPlanChat,
+  subscribePlanMouse, subscribePlanChat, subscribePlanColor,
+  subscribePlanOnline,            // 👈 추가
+  sendPlanMouse, sendPlanChat
 } from "../../socket/planSocket";
 import "./CursorLayer.css";
 
@@ -93,7 +92,7 @@ export default function CursorLayer({
     try { window.dispatchEvent(new StorageEvent("storage", { key: `presence:${roomKey}` })); } catch { }
   }, [roomKey, myMemberId, myNickname, myAvatar]);
 
-  /* ----- STOMP 연결 ----- */
+  /* ----- STOMP 연결 + 구독 ----- */
   useEffect(() => {
     if (!planId) return;
     const client = createPlanStompClient({
@@ -101,19 +100,24 @@ export default function CursorLayer({
       onConnect: () => {
         setConnected(true);
 
+        // 구독 핸들 보관
+        let unsubMouse, unsubChat, unsubColor, unsubOnline;
+
         // 커서 수신
-        subscribePlanMouse(client, planId, (msg) => {
+        unsubMouse = subscribePlanMouse(client, planId, (msg) => {
           try {
-            const { memberId, x, y, /* color */ nickname, ts } = JSON.parse(msg.body);
+            const { memberId, x, y, nickname, ts } = JSON.parse(msg.body);
             if (memberId == null) return;
+            const key = String(memberId);
 
             setCursors((prev) => {
-              const prevCur = prev[memberId];
+              const prevCur = prev[key];
               const presenceName = getNameFromPresence(roomKey, memberId);
               const serverColor = getServerColor(memberId);
 
               const nextCur = {
                 x: clamp01(x), y: clamp01(y),
+                // serverColor가 아직 null이면 기존 cur.color 유지
                 color: serverColor ?? prevCur?.color ?? null,
                 nickname: nickname || presenceName || prevCur?.nickname || `User ${memberId}`,
                 ts: ts || Date.now(),
@@ -126,29 +130,46 @@ export default function CursorLayer({
                 prevCur.color !== nextCur.color || prevCur.nickname !== nextCur.nickname ||
                 prevCur.ts !== nextCur.ts
               ) {
-                return { ...prev, [memberId]: nextCur };
+                return { ...prev, [key]: nextCur };
               }
               return prev;
             });
           } catch (e) { console.error("parse mouse", e); }
         });
 
-        // 채팅 수신
-        subscribePlanChat(client, planId, (msg) => {
+        // 온라인 목록 수신 → 존재하지 않는 멤버 커서 제거
+        unsubOnline = subscribePlanOnline(client, planId, (msg) => {
+          try {
+            const list = JSON.parse(msg.body || "[]");
+            if (!Array.isArray(list)) return;
+            const alive = new Set(list.map(m => String(m.memberId ?? m.id)));
+            setCursors(prev => {
+              const next = {};
+              for (const [k, v] of Object.entries(prev)) {
+                if (alive.has(String(k))) next[k] = v;  // 온라인만 유지
+              }
+              return next;
+            });
+          } catch { }
+        });
+
+        // 채팅/버블 수신 (+레거시 COLOR 수신)
+        unsubChat = subscribePlanChat(client, planId, (msg) => {
           try {
             const cm = JSON.parse(msg.body);
+            const key = String(cm?.memberId);
+
             if (cm?.__sys === "COLOR") {
               const { memberId, color } = cm;
               if (memberId == null || !color) return;
               setCursors((prev) => {
-                const cur = prev[memberId] || {};
-                // 즉시 커서색 반영 (부모 colorsByMember 반영을 기다리지 않음)
-                return { ...prev, [memberId]: { ...cur, color } };
+                const cur = prev[String(memberId)] || {};
+                return { ...prev, [String(memberId)]: { ...cur, color } };
               });
               return;
             }
 
-            const { memberId, nickname, avatar, ts } = cm;
+            const { memberId, nickname, avatar, ts } = cm || {};
             if (memberId == null) return;
 
             const safeText = sanitizeChatText(cm.message ?? cm.text ?? cm.msg ?? "");
@@ -158,13 +179,13 @@ export default function CursorLayer({
 
             const until = Date.now() + BUBBLE_MS;
             setCursors((prev) => {
-              const cur = prev[memberId] || {};
+              const cur = prev[key] || {};
               return {
                 ...prev,
-                [memberId]: {
+                [key]: {
                   ...cur,
                   nickname: nickname || presenceName || cur.nickname || `User ${memberId}`,
-                  color: serverColor ?? cur.color ?? null,
+                  color: cur.color ?? serverColor ?? null,
                   avatar: cur.avatar || pic,
                   bubble: { text: safeText, until, ts: ts || Date.now() },
                 },
@@ -172,6 +193,25 @@ export default function CursorLayer({
             });
           } catch (e) { console.error("parse chat", e); }
         });
+
+        // 색상 수신 → 커서 색 즉시 반영
+        unsubColor = subscribePlanColor(client, planId, (msg) => {
+          try {
+            const { memberId, color } = JSON.parse(msg.body || "{}");
+            if (!memberId || !color) return;
+            const key = String(memberId);
+            setCursors(prev => {
+              const cur = prev[key] || {};
+              return { ...prev, [key]: { ...cur, color } };
+            });
+          } catch { }
+        });
+
+        // cleanup에 쓸 수 있도록 ref에 보관
+        client.__unsubMouse = unsubMouse;
+        client.__unsubChat = unsubChat;
+        client.__unsubColor = unsubColor;
+        client.__unsubOnline = unsubOnline;
       },
       onDisconnect: () => setConnected(false),
     });
@@ -180,13 +220,17 @@ export default function CursorLayer({
     client.activate();
 
     return () => {
+      try { client.__unsubMouse?.unsubscribe?.(); } catch { }
+      try { client.__unsubChat?.unsubscribe?.(); } catch { }
+      try { client.__unsubColor?.unsubscribe?.(); } catch { }
+      try { client.__unsubOnline?.unsubscribe?.(); } catch { }
       try { client.deactivate(); } catch { }
       stompRef.current = null;
       setConnected(false);
     };
   }, [planId, token, roomKey, getServerColor]);
 
-  /* ----- 전역 마우스 좌표 추적 ----- */
+  /* ----- 전역 마우스 좌표 추적 (로컬만) ----- */
   useEffect(() => {
     const onMoveOnlyTrack = (e) => {
       myCursorRef.current = {
@@ -240,15 +284,16 @@ export default function CursorLayer({
           if (cur?.bubble?.until && cur.bubble.until <= now) {
             next[mid] = { ...cur, bubble: undefined }; changed = true;
           }
+          // ❶ 유휴 12초 넘으면 커서 제거 (서버 온라인 목록이 지연될 때 대비)
+          if (cur?.ts && now - cur.ts > 12000) {
+            delete next[mid]; changed = true;
+          }
         });
         return changed ? next : prev;
       });
     }, 250);
     return () => clearInterval(id);
   }, []);
-
-  /* ----- 로컬 presence의 색 반영 로직 제거 (서버만 사용) ----- */
-  // (의도적으로 없음)
 
   /* ----- 채팅 입력 상태 ----- */
   const [chatOpen, setChatOpen] = useState(false);
@@ -278,16 +323,16 @@ export default function CursorLayer({
     // (1) 로컬 버블
     const until = Date.now() + BUBBLE_MS;
     setCursors((prev) => {
-      const cur = prev[myMemberId] || myCursorRef.current || {};
+      const key = String(myMemberId);
+      const cur = prev[key] || myCursorRef.current || {};
       return {
         ...prev,
-        [myMemberId]: {
+        [key]: {
           ...cur,
           x: cur.x ?? myCursorRef.current.x ?? 0.5,
           y: cur.y ?? myCursorRef.current.y ?? 0.5,
           nickname: myNickname,
-          // 서버색만 사용
-          color: getServerColor(myMemberId) ?? cur.color ?? null,
+          color: cur.color ?? getServerColor(myMemberId) ?? null,
           avatar: cur.avatar || getAvatarFromPresence(roomKey, myMemberId) || "",
           bubble: { text: safe, until, ts: Date.now() },
         },
@@ -326,8 +371,7 @@ export default function CursorLayer({
         {Object.entries(cursors).map(([memberId, cur]) => {
           const left = `${(cur.x ?? 0.5) * 100}vw`;
           const top = `${(cur.y ?? 0.5) * 100}vh`;
-          // 서버색 없을 때만 임시 색(최소한의 가독성)
-          const color = cur.color || "#1677ff";
+          const color = cur.color || "#1677ff"; // 서버색 없을 때 임시색
           return (
             <div key={memberId} className="cursor-item" style={{ left, top }}>
               <svg className="cursor-icon" width="22" height="22" viewBox="0 0 24 24" style={{ stroke: color, fill: "white" }} xmlns="http://www.w3.org/2000/svg" aria-hidden>
