@@ -3,7 +3,11 @@ import { GoogleMap, useJsApiLoader, Marker, Autocomplete } from "@react-google-m
 import { useLocation, useNavigate, useOutletContext, useParams } from "react-router-dom";
 
 import styles from "./ScheduleMap.module.css";
-import createPlanStompClient, { subscribePlanPlaces } from "../socket/planSocket";
+import createPlanStompClient, {
+  subscribePlanPlaces,
+  subscribePlanChat,
+  sendPlanChat,
+} from "../socket/planSocket";
 
 import RoomPresenceDock from "./RoomPresenceDock";
 import michikiLogo from "../assets/michiki-logo.webp";
@@ -24,7 +28,6 @@ import {
   deletePlace,
   reorderPlaces,
   listPlaces,
-  recommendPlaces,
 } from "../api/place";
 import { leavePlan, getSharedPlan } from "../api/plans";
 import InlineLoginFab from "./InlineLoginFab";
@@ -41,6 +44,8 @@ const GOOGLE_MAPS_LIBRARIES = ["places"];
 const containerStyle = { width: "100%", height: "100vh" };
 const center = { lat: 43.0687, lng: 141.3508 };
 const lsKey = (roomKey) => `pins:${roomKey}`;
+
+
 
 function toUiPin(p, fallbackOrder = 1) {
   return {
@@ -75,7 +80,7 @@ const setCachedPhoto = (pid, url) => {
   try {
     if (!url) return;
     localStorage.setItem(`placePhoto:${pid}`, JSON.stringify({ url, ts: Date.now() }));
-  } catch {}
+  } catch { }
 };
 const getCachedAddress = (pid) => {
   try {
@@ -88,7 +93,7 @@ const setCachedAddress = (pid, a) => {
   try {
     if (!a) return;
     localStorage.setItem(`placeAddr:${pid}`, a);
-  } catch {}
+  } catch { }
 };
 
 const toPlainLatLng = (obj) => {
@@ -101,7 +106,63 @@ const toPlainLatLng = (obj) => {
 const formatKDate = (d) =>
   d instanceof Date && !isNaN(d) ? d.toLocaleDateString("ko-KR").replace(/\./g, ".").replace(/\s/g, "") : "날짜 미지정";
 
-function ScheduleMap() {
+  function ScheduleMap() {
+  // === center sync helpers (컴포넌트 내부) ===
+
+  // 로컬 캐시 키
+  const centerLsKey = (roomKey) => `center:${roomKey}`;
+
+  // senderId (루프 방지)
+  const getSenderId = () => {
+    try {
+      const u = JSON.parse(localStorage.getItem("user") || "null");
+      if (u?.memberId) return `m:${u.memberId}`;
+    } catch { }
+    let id = localStorage.getItem("center-sync:senderId");
+    if (!id) {
+      id = `g:${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+      localStorage.setItem("center-sync:senderId", id);
+    }
+    return id;
+  };
+
+  const stompRef = useRef(null);
+  const senderIdRef = useRef(getSenderId());
+  const pendingCenterRef = useRef(null);
+
+  const saveCenterCache = (p, zoom) => {
+    try { localStorage.setItem(centerLsKey(roomKey), JSON.stringify({ p, zoom })); } catch { }
+  };
+  const readCenterCache = () => {
+    try {
+      const raw = localStorage.getItem(centerLsKey(roomKey));
+      if (!raw) return null;
+      const { p, zoom } = JSON.parse(raw);
+      if (p && typeof p.lat === "number" && typeof p.lng === "number") {
+        return { p, zoom: typeof zoom === "number" ? zoom : 14 };
+      }
+    } catch { }
+    return null;
+  };
+
+  const broadcastCenter = (p, zoom) => {
+    const msg = { __sys: "CENTER", center: p, zoom, senderId: senderIdRef.current, ts: Date.now() };
+    if (centerSyncEnabled && stompRef.current) {
+      sendPlanChat(stompRef.current, planId, msg);
+      pendingCenterRef.current = null;
+    } else {
+      pendingCenterRef.current = msg; // 연결 전이면 대기
+    }
+  };
+
+  const applyCenter = (p, zoom = 14, { shouldBroadcast = true } = {}) => {
+    if (!p || !mapRef.current) return;
+    mapRef.current.panTo(p);
+    mapRef.current.setZoom(zoom);
+    saveCenterCache(p, zoom);
+    if (shouldBroadcast) broadcastCenter(p, zoom);
+  };
+
   const location = useLocation();
   const navigate = useNavigate();
   const { user, isLoggedIn, setIsLoggedIn, setUser } = useOutletContext() || {};
@@ -120,6 +181,16 @@ function ScheduleMap() {
   const sdFromQuery = qs.get("sd");
   const edFromQuery = qs.get("ed");
   const titleFromQuery = qs.get("t");
+  const destFromQuery = qs.get("d") || qs.get("dest") || qs.get("destination") || undefined;
+  const clatFromQuery = qs.get("clat");
+  const clngFromQuery = qs.get("clng");
+  const czoomFromQuery = qs.get("cz");
+
+  // URL 또는 state 중 하나라도 있으면 초기 목적지로 사용
+  const initialDestination = useMemo(
+    () => (destination || destFromQuery || ""),
+    [destination, destFromQuery]
+  );
 
   // 공유 모드 여부
   const isSharedMode = !!shareURI;
@@ -129,9 +200,11 @@ function ScheduleMap() {
 
   // roomKey
   const roomKey = useMemo(
-    () => (isSharedMode ? `share:${shareURI}` : (planId || destination || location.pathname || "schedule-room")),
-    [isSharedMode, shareURI, planId, destination, location.pathname]
+    () => (isSharedMode ? `share:${shareURI}` : (planId || initialDestination || location.pathname || "schedule-room")),
+    [isSharedMode, shareURI, planId, initialDestination, location.pathname]
   );
+
+  const centerSyncEnabled = !!planId && !isSharedMode;
 
   const { language } = useContext(LanguageContext);
   const texts = allTexts[language];
@@ -173,6 +246,7 @@ function ScheduleMap() {
 
   const [isLeaving, setIsLeaving] = useState(false);
   const [isLoadingPins, setIsLoadingPins] = useState(false);
+  const [members, setMembers] = useState([]);
 
   // 읽기 전용 여부
   const readOnly = isSharedMode ? true : !isLoggedIn;
@@ -192,37 +266,58 @@ function ScheduleMap() {
     if (!planId || isSharedMode) return;
 
     const token = localStorage.getItem("accessToken") || null;
-    let sub;
+    let subPlaces, subChat;
     const client = createPlanStompClient({
       token,
       onConnect: () => {
-        sub = subscribePlanPlaces(client, planId, () => {
+        stompRef.current = client;
+
+        subPlaces = subscribePlanPlaces(client, planId, () => {
           refreshPinsFromServer();
         });
+
+        subChat = subscribePlanChat(client, planId, (frame) => {
+          try {
+            const msg = JSON.parse(frame.body || "{}");
+            if (msg?.__sys !== "CENTER") return;
+            if (msg.senderId && msg.senderId === senderIdRef.current) return; // 루프 방지
+            const p = msg.center;
+            if (!p || typeof p.lat !== "number" || typeof p.lng !== "number") return;
+            applyCenter(p, typeof msg.zoom === "number" ? msg.zoom : 14, { shouldBroadcast: false });
+          } catch { }
+        });
+
+        // ✅ 연결 직후 대기열이 있으면 즉시 브로드캐스트
+        if (pendingCenterRef.current) {
+          sendPlanChat(client, planId, pendingCenterRef.current);
+          pendingCenterRef.current = null;
+        }
       },
     });
 
     client.activate();
 
     return () => {
-      try { sub?.unsubscribe(); } catch {}
-      try { client.deactivate(); } catch {}
+      try { subPlaces?.unsubscribe(); } catch { }
+      try { subChat?.unsubscribe(); } catch { }
+      try { client.deactivate(); } catch { }
+      stompRef.current = null;
     };
-  }, [planId, isSharedMode, dateRange]); // 날짜 바뀌어도 목록 재구독 유지
+  }, [planId, isSharedMode, dateRange]);
 
-  // 목적지 이동
+  // 목적지 이동 (state 또는 URL에서 온 initialDestination)
   useEffect(() => {
-    if (!destination || !geocoder || !mapRef.current) return;
-    geocoder.geocode({ address: destination }, (results, status) => {
+    if (!initialDestination || !geocoder || !mapRef.current) return;
+    geocoder.geocode({ address: initialDestination }, (results, status) => {
       if (status === "OK" && results[0]) {
         const p = toPlainLatLng(results[0].geometry.location);
         if (p) {
-          mapRef.current.panTo(p);
-          mapRef.current.setZoom(14);
+          // ✅ 공용 함수: 이동 + 캐시 + (연결되면) 브로드캐스트 / (미연결) 대기열
+          applyCenter(p, 14, { shouldBroadcast: true });
         }
       }
     });
-  }, [destination, geocoder]);
+  }, [initialDestination, geocoder]); // centerSyncEnabled/planId는 applyCenter에서 처리됨
 
   // 초기값 반영
   useEffect(() => {
@@ -239,8 +334,8 @@ function ScheduleMap() {
       const ed = new Date(edFromQuery);
       if (!isNaN(sd) && !isNaN(ed)) setDateRange([sd, ed]);
     }
-    if (destination) setSearchInput(destination);
-  }, [incomingTitle, incomingStart, incomingEnd, destination, sdFromQuery, edFromQuery, titleFromQuery]);
+    if (initialDestination) setSearchInput(initialDestination);
+  }, [incomingTitle, incomingStart, incomingEnd, initialDestination, sdFromQuery, edFromQuery, titleFromQuery]);
 
   // 플랜 정보 로드 (공유/일반)
   useEffect(() => {
@@ -300,6 +395,7 @@ function ScheduleMap() {
         const data = await res.json();
         setTitle(data.title ?? "여행");
         if (data.startDate && data.endDate) setDateRange([new Date(data.startDate), new Date(data.endDate)]);
+        setMembers(data.members || []); // ✅ 멤버/색상 저장
       } catch (err) {
         console.error("플랜 로드 실패:", err);
       }
@@ -410,6 +506,19 @@ function ScheduleMap() {
     mapRef.current = map;
     setMapInstance(map);
     setGeocoder(new window.google.maps.Geocoder());
+    // 5-1) URL에 clat/clng 있으면 최우선 적용
+    if (clatFromQuery && clngFromQuery) {
+      const p = { lat: parseFloat(clatFromQuery), lng: parseFloat(clngFromQuery) };
+      if (Number.isFinite(p.lat) && Number.isFinite(p.lng)) {
+        applyCenter(p, Number.isFinite(+czoomFromQuery) ? +czoomFromQuery : 14, { shouldBroadcast: true });
+      }
+    } else {
+      // ✅ 캐시가 있으면 즉시 적용(깜빡임 최소화, 새로고침 시 유지)
+      const cached = readCenterCache();
+      if (cached) {
+        applyCenter(cached.p, cached.zoom ?? 14, { shouldBroadcast: false });
+      }
+    }
 
     if (rightClickListenerRef.current) {
       window.google.maps.event.removeListener(rightClickListenerRef.current);
@@ -505,9 +614,6 @@ function ScheduleMap() {
           });
           await refreshPinsFromServer();
 
-          if (activeCategory === "__recommended__" && showCategoryList) {
-            handleNearbySearch("__recommended__", { forceRefresh: true });
-          }
         } catch (err) {
           console.error("자유핀 저장 실패:", err);
           alert("자유 핀 저장 실패: " + err.message);
@@ -607,6 +713,55 @@ function ScheduleMap() {
       });
     });
   };
+
+  useEffect(() => {
+  if (!isLoaded || !mapRef.current) return;
+
+  // 우선순위 조건이 하나라도 있으면 스킵
+  const hasUrlCenter =
+    Number.isFinite(parseFloat(clatFromQuery)) &&
+    Number.isFinite(parseFloat(clngFromQuery));
+  const hasInitialDest = !!initialDestination;
+  const cached = readCenterCache();
+  if (hasUrlCenter || hasInitialDest || cached) return;
+
+  // 선택된 날짜 핀 -> 없으면 모든 날짜 핀
+  const dayPins = (pinsByDay[selectedDayIdx] || []).map(p => p.position);
+  const allPins = pinsByDay.flat().map(p => p.position);
+  const pick = dayPins.length > 0 ? dayPins : allPins;
+
+  if (pick.length === 0) return;
+
+  // 핀이 1개면 그 핀으로 이동
+  if (pick.length === 1) {
+    const p = pick[0];
+    applyCenter({ lat: p.lat, lng: p.lng }, 14, { shouldBroadcast: false });
+    return;
+  }
+
+  // 여러 개면 bounds로 맞추기
+  const bounds = new window.google.maps.LatLngBounds();
+  for (const pos of pick) bounds.extend(new window.google.maps.LatLng(pos.lat, pos.lng));
+  mapRef.current.fitBounds(bounds);
+
+  // 너무 과도한 줌 보정(선택 사항)
+  const z = mapRef.current.getZoom?.();
+  if (typeof z === "number" && z > 16) mapRef.current.setZoom(16);
+
+  // 캐시만 갱신(브로드캐스트 X)
+  const c = mapRef.current.getCenter?.();
+  if (c) {
+    const centerPlain = { lat: c.lat(), lng: c.lng() };
+    saveCenterCache(centerPlain, mapRef.current.getZoom?.() ?? 14);
+  }
+}, [
+  isLoaded,
+  pinsByDay,
+  selectedDayIdx,
+  initialDestination,
+  clatFromQuery,
+  clngFromQuery
+]);
 
   useEffect(() => {
     if (!isLoaded || !mapRef.current) return;
@@ -741,8 +896,7 @@ function ScheduleMap() {
       },
     });
 
-    map.panTo(location);
-    map.setZoom(15);
+    applyCenter(location, 15, { shouldBroadcast: true });
     setNearbyMarkers([]);
   };
 
@@ -769,79 +923,6 @@ function ScheduleMap() {
 
     const c = map.getCenter();
     const centerPlain = toPlainLatLng(c) || { lat: c.lat(), lng: c.lng() };
-
-    // 추천(서버)
-    if (type === "__recommended__") {
-      (async () => {
-        try {
-          if (!planId) {
-            if (isSharedMode) {
-              alert("공유 보기에서는 추천 기능을 사용할 수 없어요.");
-              return;
-            }
-            alert("플랜 ID가 없어 추천을 불러올 수 없어요.");
-            return;
-          }
-          const zoomLevel = Math.round(map.getZoom?.() ?? 14);
-
-          const res = await recommendPlaces(planId, {
-            centerLatitude: centerPlain.lat,
-            centerLongitude: centerPlain.lng,
-            zoomLevel,
-          });
-          const arr = Array.isArray(res) ? res : res ? [res] : [];
-
-          const pinCountOf = (r) =>
-            Number(r.pinCount ?? r.count ?? r.total ?? r.hits ?? r.frequency ?? r.numPins ?? r.placeCount ?? 0) || 0;
-
-          const top3 = arr
-            .map((r) => ({ ...r, __pinCount: pinCountOf(r) }))
-            .sort((a, b) => b.__pinCount - a.__pinCount)
-            .slice(0, 3);
-
-          const enrichOne = (item) =>
-            new Promise((resolve) => {
-              if (item.googlePlaceId) {
-                service.getDetails(
-                  {
-                    placeId: item.googlePlaceId,
-                    fields: ["name", "geometry", "photos", "rating", "user_ratings_total", "vicinity", "place_id"],
-                  },
-                  (place, status) => {
-                    if (status === window.google.maps.places.PlacesServiceStatus.OK) {
-                      resolve({ ...place, __isRecommended: true, __pinCount: item.__pinCount });
-                    } else {
-                      resolve({
-                        place_id: item.googlePlaceId,
-                        name: item.name ?? "추천 장소",
-                        geometry: { location: new window.google.maps.LatLng(item.latitude, item.longitude) },
-                        __isRecommended: true,
-                        __pinCount: item.__pinCount,
-                      });
-                    }
-                  }
-                );
-              } else {
-                resolve({
-                  place_id: `reco-${item.latitude},${item.longitude}`,
-                  name: item.name ?? "추천 장소",
-                  geometry: { location: new window.google.maps.LatLng(item.latitude, item.longitude) },
-                  __isRecommended: true,
-                  __pinCount: item.__pinCount,
-                });
-              }
-            });
-
-          const results = await Promise.all(top3.map(enrichOne));
-          setNearbyMarkers(results);
-          setShowCategoryList(true);
-        } catch (e) {
-          console.error("추천 불러오기 실패:", e);
-          alert("추천 장소를 불러오지 못했어요.");
-        }
-      })();
-      return;
-    }
 
     // 기본 구글 카테고리
     service.nearbySearch({ location: centerPlain, radius: 1200, type }, (results, status) => {
@@ -955,6 +1036,16 @@ function ScheduleMap() {
                   url.searchParams.set("sd", ymd(startDate));
                   url.searchParams.set("ed", ymd(endDate));
                   url.searchParams.set("t", title || "여행");
+                  if (searchInput?.trim()) url.searchParams.set("d", searchInput.trim());
+                  // 좌표를 안정적으로 공유하고 싶으면(지오코딩 없이)
+                  try {
+                    const c = mapRef.current?.getCenter();
+                    if (c) {
+                      url.searchParams.set("clat", String(c.lat?.() ?? c.lat));
+                      url.searchParams.set("clng", String(c.lng?.() ?? c.lng));
+                      url.searchParams.set("cz", String(mapRef.current?.getZoom() ?? 14));
+                    }
+                  } catch { }
                 }
                 await navigator.clipboard.writeText(url.toString());
                 alert("일정 링크가 클립보드에 복사되었습니다!");
@@ -1092,7 +1183,7 @@ function ScheduleMap() {
           </Autocomplete>
         </form>
 
-        {/* 주변/추천 리스트 */}
+        {/* 카테고리 장소 리스트 */}
         {showCategoryList && nearbyMarkers.length > 0 && (
           <div className={styles.nearbyList}>
             <div className={styles.nearbyTitle}>
@@ -1108,8 +1199,8 @@ function ScheduleMap() {
                   src={
                     place.photos && place.photos[0]
                       ? (place.photos[0].getUrl
-                          ? place.photos[0].getUrl({ maxWidth: 120 })
-                          : (place.photos[0].url || place.photos[0].uri))
+                        ? place.photos[0].getUrl({ maxWidth: 120 })
+                        : (place.photos[0].url || place.photos[0].uri))
                       : "https://via.placeholder.com/60?text=No+Image"
                   }
                   className={styles.nearbyThumb}
