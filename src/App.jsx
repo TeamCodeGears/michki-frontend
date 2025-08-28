@@ -27,8 +27,12 @@ function App() {
   }, []);
 
   const location = useLocation();
-  const hideOnSchedule = location.pathname.startsWith("/schedule");
-  const hideLogoOnDashboard = location.pathname.startsWith("/dashboard");
+
+  // /schedule/*, /share/* 에서는 푸터/아바타, 로고를 숨김
+  const isScheduleLike = /^\/(schedule|share)(\/|$)/.test(location.pathname);
+  const hideOnSchedule = isScheduleLike;
+  const hideLogoOnDashboard =
+    location.pathname.startsWith("/dashboard") || isScheduleLike;
 
   // 부트스트랩 전엔 렌더 막기 (깜빡임 방지)
   if (!bootstrapped) return null;
@@ -40,7 +44,9 @@ function App() {
 
       <main className="main-outlet">
         {/* 🔑 모든 자식에서 useOutletContext()로 user/isLoggedIn 사용 */}
-        <Outlet context={{ isLoggedIn, setIsLoggedIn, user, setUser, bootstrapped }} />
+        <Outlet
+          context={{ isLoggedIn, setIsLoggedIn, user, setUser, bootstrapped }}
+        />
       </main>
 
       {!hideOnSchedule && <Footer />}

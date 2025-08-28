@@ -29,7 +29,7 @@ import {
   reorderPlaces,
   listPlaces,
 } from "../api/place";
-import { leavePlan, getSharedPlan } from "../api/plans";
+import { leavePlan, getSharedPlan, getPlan } from "../api/plans";
 import InlineLoginFab from "./InlineLoginFab";
 import CursorLayer from "./cursor/CursorLayer";
 import "./cursor/CursorLayer.css";
@@ -106,7 +106,7 @@ const toPlainLatLng = (obj) => {
 const formatKDate = (d) =>
   d instanceof Date && !isNaN(d) ? d.toLocaleDateString("ko-KR").replace(/\./g, ".").replace(/\s/g, "") : "날짜 미지정";
 
-  function ScheduleMap() {
+function ScheduleMap() {
   // === center sync helpers (컴포넌트 내부) ===
 
   // 로컬 캐시 키
@@ -166,7 +166,8 @@ const formatKDate = (d) =>
   const location = useLocation();
   const navigate = useNavigate();
   const { user, isLoggedIn, setIsLoggedIn, setUser } = useOutletContext() || {};
-  const { planId: planIdFromParam, shareURI } = useParams();
+  const { planId: planIdFromParam, shareURI: shareURIFromRoute } = useParams();
+  const shareURI = shareURIFromRoute ?? null; // ← state 아님, 파라미터 그대로
 
   const {
     destination,
@@ -198,6 +199,34 @@ const formatKDate = (d) =>
   // 일반 모드에서는 planId 사용
   const planId = isSharedMode ? undefined : (planIdFromParam || planIdFromState || planIdFromQuery || undefined);
 
+  // ===== DEBUG: route / mode snapshot =====
+  useEffect(() => {
+    // 콘솔 보존 켜기: DevTools → ⚙️ → "Preserve log" 체크 추천
+    console.groupCollapsed("%c[ScheduleMap] route debug", "color:#888");
+    console.log("pathname             :", location.pathname);
+    console.log("search               :", location.search);
+    console.log("params.planId        :", planIdFromParam);
+    console.log("params.shareURI      :", shareURIFromRoute);
+    console.log("state.shareURI(useState):", shareURI);
+    console.log("isSharedMode         :", isSharedMode);
+    console.log("planId (effective)   :", planId);
+    console.groupEnd();
+
+    // /schedule인데 isSharedMode가 true면 즉시 경고
+    if (location.pathname.startsWith("/schedule") && isSharedMode) {
+      console.warn("⚠️ /schedule/* 경로인데 isSharedMode=true 입니다. shareURI state가 남아있을 가능성.");
+    }
+  }, [
+    location.pathname,
+    location.search,
+    planIdFromParam,
+    shareURIFromRoute,
+    shareURI,          // state
+    isSharedMode,
+    planId
+  ]);
+
+
   // roomKey
   const roomKey = useMemo(
     () => (isSharedMode ? `share:${shareURI}` : (planId || initialDestination || location.pathname || "schedule-room")),
@@ -222,6 +251,7 @@ const formatKDate = (d) =>
   // state
   const [title, setTitle] = useState("여행");
   const [dateRange, setDateRange] = useState([null, null]);
+  const [shareUriState, setShareUriState] = useState(null); // ✅ 추가
   const [pinsByDay, setPinsByDay] = useState([[]]);
   const [selectedDayIdx, setSelectedDayIdx] = useState(0);
   const [showDayDropdown, setShowDayDropdown] = useState(false);
@@ -247,6 +277,17 @@ const formatKDate = (d) =>
   const [isLeaving, setIsLeaving] = useState(false);
   const [isLoadingPins, setIsLoadingPins] = useState(false);
   const [members, setMembers] = useState([]);
+
+  // 색 변경 등 서버 상태 반영: 멤버 재조회
+  const refetchMembers = async () => {
+    if (!planId) return;
+    try {
+      const data = await getPlan(planId);
+      setMembers(data.members || []);
+    } catch (e) {
+      console.warn("refetch members failed:", e);
+    }
+  };
 
   // 읽기 전용 여부
   const readOnly = isSharedMode ? true : !isLoggedIn;
@@ -337,73 +378,7 @@ const formatKDate = (d) =>
     if (initialDestination) setSearchInput(initialDestination);
   }, [incomingTitle, incomingStart, incomingEnd, initialDestination, sdFromQuery, edFromQuery, titleFromQuery]);
 
-  // 플랜 정보 로드 (공유/일반)
-  useEffect(() => {
-    const load = async () => {
-      if (isSharedMode) {
-        try {
-          setIsLoadingPins(true);
-          const data = await getSharedPlan(encodeURIComponent(shareURI));
-          setTitle(data.title ?? "여행");
 
-          if (data.startDate && data.endDate) {
-            setDateRange([new Date(data.startDate), new Date(data.endDate)]);
-          }
-
-          if (data.startDate && data.endDate) {
-            const sd = new Date(data.startDate);
-            const ed = new Date(data.endDate);
-            const days = getDaysArr(sd, ed);
-            const dayIndexByIso = new Map(days.map((d, i) => [ymd(d), i]));
-            const groups = Array.from({ length: days.length }, () => []);
-
-            (data.places || [])
-              .slice()
-              .sort((a, b) =>
-                (a.travelDate || "").localeCompare(b.travelDate || "") ||
-                (a.orderInDay ?? 0) - (b.orderInDay ?? 0)
-              )
-              .forEach((p) => {
-                const idx = dayIndexByIso.get((p.travelDate || "").slice(0, 10));
-                if (idx == null) return;
-                groups[idx].push(toUiPin(p, (groups[idx].length || 0) + 1));
-              });
-
-            setPinsByDay(groups);
-          } else {
-            const arr = (data.places || []).map((p, i) => toUiPin(p, i + 1));
-            setPinsByDay([arr]);
-          }
-        } catch (err) {
-          console.error("공유 플랜 로드 실패:", err);
-          alert("유효하지 않은 공유 링크이거나 만료되었습니다.");
-        } finally {
-          setIsLoadingPins(false);
-        }
-        return;
-      }
-
-      // 일반
-      const needsFetch = planId && !(incomingTitle && incomingStart && incomingEnd);
-      if (!needsFetch || !API_BASE) return;
-      const token = localStorage.getItem("accessToken");
-      try {
-        const headers = { "Content-Type": "application/json" };
-        if (token) headers.Authorization = `Bearer ${token}`;
-        const res = await fetch(`${API_BASE}/plans/${planId}`, { headers });
-        if (!res.ok) throw new Error(`GET /plans/${planId} ${res.status}`);
-        const data = await res.json();
-        setTitle(data.title ?? "여행");
-        if (data.startDate && data.endDate) setDateRange([new Date(data.startDate), new Date(data.endDate)]);
-        setMembers(data.members || []); // ✅ 멤버/색상 저장
-      } catch (err) {
-        console.error("플랜 로드 실패:", err);
-      }
-    };
-
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSharedMode, shareURI, planId, incomingTitle, incomingStart, incomingEnd]);
 
   const { isLoaded } = useJsApiLoader({ googleMapsApiKey: GOOGLE_MAPS_API_KEY, libraries: GOOGLE_MAPS_LIBRARIES });
 
@@ -416,6 +391,106 @@ const formatKDate = (d) =>
   const hasValidDates = startDate instanceof Date && !isNaN(startDate) && endDate instanceof Date && !isNaN(endDate);
   const daysArr = hasValidDates ? getDaysArr(startDate, endDate) : [];
   const pins = pinsByDay[selectedDayIdx] || [];
+
+  // 플랜 정보 로드 (공유/일반) - 항상 서버 진실 사용
+  useEffect(() => {
+    const load = async () => {
+      if (!API_BASE) return;
+      try {
+        setIsLoadingPins(true);
+        if (isSharedMode) {
+          // 공유 모드도 서버에서 전부
+          const data = await getSharedPlan(encodeURIComponent(shareURI));
+          setTitle(data.title ?? "여행");
+          if (data.startDate && data.endDate) setDateRange([new Date(data.startDate), new Date(data.endDate)]);
+          setShareUriState(data.shareURI || shareURI || null); // ✅ 추가: 서버 응답의 shareURI(없으면 라우트값)
+          setMembers(data.members || []); // 공유 보기에서도 멤버 반영
+
+          // 로그인 상태면 서버가 자동 참여 처리 → 일반 모드로 전환
+          if (isLoggedIn && data?.planId) {
+            navigate(`/schedule/${data.planId}`, {
+              replace: true,
+              state: {
+                title: data.title,
+                startDate: data.startDate,
+                endDate: data.endDate,
+                planId: data.planId,
+              },
+            });
+            return;
+          }
+          // places → 화면에 즉시 반영
+          if (data.startDate && data.endDate) {
+            const sd = new Date(data.startDate); const ed = new Date(data.endDate);
+            const days = getDaysArr(sd, ed);
+            const dayIndexByIso = new Map(days.map((d, i) => [ymd(d), i]));
+            const groups = Array.from({ length: days.length }, () => []);
+            (data.places || [])
+              .slice()
+              .sort((a, b) => (a.travelDate || "").localeCompare(b.travelDate || "") || (a.orderInDay ?? 0) - (b.orderInDay ?? 0))
+              .forEach(p => {
+                const idx = dayIndexByIso.get((p.travelDate || "").slice(0, 10));
+                if (idx == null) return;
+                groups[idx].push(toUiPin(p, (groups[idx].length || 0) + 1));
+              });
+            setPinsByDay(groups);
+          } else {
+            setPinsByDay([(data.places || []).map((p, i) => toUiPin(p, i + 1))]);
+          }
+          return;
+        }
+
+        // 일반 모드: 항상 서버에서 title/dates/members/places 수신
+        if (!planId) return;
+        const token = localStorage.getItem("accessToken") || "";
+        const headers = { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+        const res = await fetch(`${API_BASE}/plans/${planId}`, { headers });
+        if (!res.ok) throw new Error(`GET /plans/${planId} ${res.status}`);
+        const data = await res.json();
+
+        setTitle(data.title ?? "여행");
+        if (data.startDate && data.endDate) setDateRange([new Date(data.startDate), new Date(data.endDate)]);
+        setMembers(data.members || []); // ✅ 서버 내려준 멤버/색만 사용
+        setShareUriState(data.shareURI || null); // ✅ 서버 응답의 shareURI 저장
+
+        // places도 즉시 반영
+        if (data.startDate && data.endDate) {
+          const sd = new Date(data.startDate); const ed = new Date(data.endDate);
+          const days = getDaysArr(sd, ed);
+          const dayIndexByIso = new Map(days.map((d, i) => [ymd(d), i]));
+          const groups = Array.from({ length: days.length }, () => []);
+          (data.places || [])
+            .slice()
+            .sort((a, b) => (a.travelDate || "").localeCompare(b.travelDate || "") || (a.orderInDay ?? 0) - (b.orderInDay ?? 0))
+            .forEach(p => {
+              const idx = dayIndexByIso.get((p.travelDate || "").slice(0, 10));
+              if (idx == null) return;
+              groups[idx].push(toUiPin(p, (groups[idx].length || 0) + 1));
+            });
+          setPinsByDay(groups);
+        } else {
+          setPinsByDay([(data.places || []).map((p, i) => toUiPin(p, i + 1))]);
+        }
+      } catch (err) {
+        console.error("플랜 로드 실패:", err);
+      } finally {
+        setIsLoadingPins(false);
+      }
+    };
+    load();
+  }, [API_BASE, isSharedMode, shareURI, planId, isLoggedIn]); // ← 로그인 상태 변할 때도 재평가
+
+
+  // 서버가 내려준 멤버 색상만 사용
+  const colorsByMember = useMemo(() => {
+    const m = new Map();
+    for (const it of (members || [])) {
+      const id = String(it.memberId ?? it.id ?? "");
+      if (id) m.set(id, it.color || null);
+    }
+    return m;
+  }, [members]);
+
 
   // 날짜 길이 보정
   useEffect(() => {
@@ -715,53 +790,53 @@ const formatKDate = (d) =>
   };
 
   useEffect(() => {
-  if (!isLoaded || !mapRef.current) return;
+    if (!isLoaded || !mapRef.current) return;
 
-  // 우선순위 조건이 하나라도 있으면 스킵
-  const hasUrlCenter =
-    Number.isFinite(parseFloat(clatFromQuery)) &&
-    Number.isFinite(parseFloat(clngFromQuery));
-  const hasInitialDest = !!initialDestination;
-  const cached = readCenterCache();
-  if (hasUrlCenter || hasInitialDest || cached) return;
+    // 우선순위 조건이 하나라도 있으면 스킵
+    const hasUrlCenter =
+      Number.isFinite(parseFloat(clatFromQuery)) &&
+      Number.isFinite(parseFloat(clngFromQuery));
+    const hasInitialDest = !!initialDestination;
+    const cached = readCenterCache();
+    if (hasUrlCenter || hasInitialDest || cached) return;
 
-  // 선택된 날짜 핀 -> 없으면 모든 날짜 핀
-  const dayPins = (pinsByDay[selectedDayIdx] || []).map(p => p.position);
-  const allPins = pinsByDay.flat().map(p => p.position);
-  const pick = dayPins.length > 0 ? dayPins : allPins;
+    // 선택된 날짜 핀 -> 없으면 모든 날짜 핀
+    const dayPins = (pinsByDay[selectedDayIdx] || []).map(p => p.position);
+    const allPins = pinsByDay.flat().map(p => p.position);
+    const pick = dayPins.length > 0 ? dayPins : allPins;
 
-  if (pick.length === 0) return;
+    if (pick.length === 0) return;
 
-  // 핀이 1개면 그 핀으로 이동
-  if (pick.length === 1) {
-    const p = pick[0];
-    applyCenter({ lat: p.lat, lng: p.lng }, 14, { shouldBroadcast: false });
-    return;
-  }
+    // 핀이 1개면 그 핀으로 이동
+    if (pick.length === 1) {
+      const p = pick[0];
+      applyCenter({ lat: p.lat, lng: p.lng }, 14, { shouldBroadcast: false });
+      return;
+    }
 
-  // 여러 개면 bounds로 맞추기
-  const bounds = new window.google.maps.LatLngBounds();
-  for (const pos of pick) bounds.extend(new window.google.maps.LatLng(pos.lat, pos.lng));
-  mapRef.current.fitBounds(bounds);
+    // 여러 개면 bounds로 맞추기
+    const bounds = new window.google.maps.LatLngBounds();
+    for (const pos of pick) bounds.extend(new window.google.maps.LatLng(pos.lat, pos.lng));
+    mapRef.current.fitBounds(bounds);
 
-  // 너무 과도한 줌 보정(선택 사항)
-  const z = mapRef.current.getZoom?.();
-  if (typeof z === "number" && z > 16) mapRef.current.setZoom(16);
+    // 너무 과도한 줌 보정(선택 사항)
+    const z = mapRef.current.getZoom?.();
+    if (typeof z === "number" && z > 16) mapRef.current.setZoom(16);
 
-  // 캐시만 갱신(브로드캐스트 X)
-  const c = mapRef.current.getCenter?.();
-  if (c) {
-    const centerPlain = { lat: c.lat(), lng: c.lng() };
-    saveCenterCache(centerPlain, mapRef.current.getZoom?.() ?? 14);
-  }
-}, [
-  isLoaded,
-  pinsByDay,
-  selectedDayIdx,
-  initialDestination,
-  clatFromQuery,
-  clngFromQuery
-]);
+    // 캐시만 갱신(브로드캐스트 X)
+    const c = mapRef.current.getCenter?.();
+    if (c) {
+      const centerPlain = { lat: c.lat(), lng: c.lng() };
+      saveCenterCache(centerPlain, mapRef.current.getZoom?.() ?? 14);
+    }
+  }, [
+    isLoaded,
+    pinsByDay,
+    selectedDayIdx,
+    initialDestination,
+    clatFromQuery,
+    clngFromQuery
+  ]);
 
   useEffect(() => {
     if (!isLoaded || !mapRef.current) return;
@@ -1026,29 +1101,16 @@ const formatKDate = (d) =>
             <img src={michikiLogo} alt="Michiki" style={{ width: 36, height: 36 }} />
           </button>
 
-          {/* 공유 보기에서도 URL 복사 가능 */}
+          {/* 공유 버튼 - 서버 shareURI 기반 */}
           <button
             type="button"
             onClick={async () => {
               try {
-                const url = new URL(window.location.href);
-                if (!isSharedMode && planId && startDate && endDate) {
-                  url.searchParams.set("sd", ymd(startDate));
-                  url.searchParams.set("ed", ymd(endDate));
-                  url.searchParams.set("t", title || "여행");
-                  if (searchInput?.trim()) url.searchParams.set("d", searchInput.trim());
-                  // 좌표를 안정적으로 공유하고 싶으면(지오코딩 없이)
-                  try {
-                    const c = mapRef.current?.getCenter();
-                    if (c) {
-                      url.searchParams.set("clat", String(c.lat?.() ?? c.lat));
-                      url.searchParams.set("clng", String(c.lng?.() ?? c.lng));
-                      url.searchParams.set("cz", String(mapRef.current?.getZoom() ?? 14));
-                    }
-                  } catch { }
-                }
-                await navigator.clipboard.writeText(url.toString());
-                alert("일정 링크가 클립보드에 복사되었습니다!");
+                const effectiveShare = isSharedMode ? (shareURIFromRoute || shareUriState) : shareUriState;
+                if (!effectiveShare) { alert("공유 링크를 불러오지 못했습니다."); return; }
+                const shareUrl = `${window.location.origin}/share/${effectiveShare}`;
+                await navigator.clipboard.writeText(shareUrl);
+                alert("공유 링크가 클립보드에 복사되었습니다!");
               } catch {
                 alert("복사 실패! (브라우저 권한 또는 HTTPS 환경 확인)");
               }
@@ -1057,6 +1119,7 @@ const formatKDate = (d) =>
           >
             {texts.share}
           </button>
+
 
           <button
             type="button"
@@ -1086,8 +1149,8 @@ const formatKDate = (d) =>
                 if (!ok) return;
                 try {
                   setIsLeaving(true);
-                  await leavePlan(planId);
-                  alert("방 나가기 완료");
+                  const msg = await leavePlan(planId);
+                  alert(msg);
                   navigate("/dashboard", { replace: true });
                 } catch (err) {
                   console.error("leave failed", err);
@@ -1325,6 +1388,7 @@ const formatKDate = (d) =>
             isLoggedIn={!readOnly}
             roomKey={roomKey}
             map={mapInstance}
+            colorsByMember={colorsByMember}
           />
         </GoogleMap>
 
@@ -1357,8 +1421,8 @@ const formatKDate = (d) =>
         />
       </div>
 
-      {/* 로그인 FAB (공유→로그인 후 자동 참여 → 일반모드로 전환) */}
-      {!isSharedMode && readOnly && (
+      {/* 로그인 FAB: 읽기 전용이면(= 비로그인 또는 공유) 노출 */}
+      {readOnly && (
         <InlineLoginFab
           onLoggedIn={async (u) => {
             setIsLoggedIn?.(true);
@@ -1370,7 +1434,7 @@ const formatKDate = (d) =>
                 const data = await getSharedPlan(encodeURIComponent(shareURI)); // 서버가 join 처리
                 const joinedPlanId = data?.planId;
                 if (joinedPlanId) {
-                  navigate(`/plans/${joinedPlanId}`, {
+                  navigate(`/schedule/${joinedPlanId}`, {
                     replace: true,
                     state: {
                       title: data?.title,
@@ -1394,7 +1458,15 @@ const formatKDate = (d) =>
       )}
 
       {/* 일반 모드에서만 프레즌스 도크 */}
-      {!isSharedMode && <RoomPresenceDock roomKey={roomKey} currentUser={user} planId={planId} />}
+      {!isSharedMode && (
+        <RoomPresenceDock
+          roomKey={roomKey}
+          currentUser={user}
+          planId={planId}
+          colorsByMember={colorsByMember}
+          onColorSaved={refetchMembers}   // ← 추가
+        />
+      )}
     </div>
   );
 }

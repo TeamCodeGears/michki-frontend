@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { changeColor, getPlan, getMyColorViaPlan, markNotificationsRead } from "../api/plans";
-import { createPlanStompClient } from "../socket/planSocket";
+import createPlanStompClient from "../socket/planSocket";
 
 /* ========================= helpers & constants ========================= */
 
@@ -37,7 +37,7 @@ function getPresence(roomKey) {
 function setPresence(roomKey, data) {
   try {
     localStorage.setItem(`presence:${roomKey}`, JSON.stringify(data));
-  } catch {}
+  } catch { }
 }
 
 /* ========================= UI: Avatar ========================= */
@@ -106,7 +106,7 @@ function AvatarRing({ picture, fallbackInitial, borderColor = "#ccc", size = 40,
 
 /* ========================= main ========================= */
 
-export default function RoomPresenceDock({ roomKey, currentUser, planId }) {
+export default function RoomPresenceDock({ roomKey, currentUser, planId, colorsByMember, onColorSaved }) {
   const [members, setMembers] = useState([]);
   const [serverMyColor, setServerMyColor] = useState(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -137,8 +137,8 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId }) {
     try {
       if (!audioRef.current) return;
       audioRef.current.currentTime = 0;
-      audioRef.current.play().catch(() => {});
-    } catch {}
+      audioRef.current.play().catch(() => { });
+    } catch { }
   };
 
   // me
@@ -161,10 +161,9 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId }) {
 
   const myColor = useMemo(() => {
     if (!me) return null;
-    if (serverMyColor) return serverMyColor;
-    const mine = members.find((m) => m.id === me.id);
-    return mine?.color || null;
-  }, [members, me, serverMyColor]);
+    const c = colorsByMember?.get?.(String(me.memberId ?? me.id));
+    return c ?? null;
+  }, [me, colorsByMember]);
 
   const pickFreeColor = (usedColorsSet) => {
     for (const c of PALETTE) if (!usedColorsSet.has(c)) return c;
@@ -191,6 +190,7 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId }) {
           nickname: me.nickname,
         });
         setServerMyColor(c ?? null);
+        await onColorSaved?.();   // ← 저장 후 멤버 재조회 트리거
       } catch (e) {
         const sc = e?.response?.status;
         if (sc === 404) console.warn(`Plan ${planId} not found/inaccessible.`);
@@ -294,33 +294,6 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId }) {
           setPresence(roomKey, store);
         }
 
-        // 3) "내 색"만 중복/없음일 때 자동 조정 (다른 사람 색은 건드리지 않음)
-        {
-          const used = new Set(next.map((m) => m.color).filter(Boolean));
-          const myIdx = next.findIndex((x) => x.id === me.id);
-          if (myIdx >= 0) {
-            const mine = next[myIdx];
-            const dupCount =
-              mine.color ? next.filter((m) => m.color === mine.color).length : 0;
-            const needFix = !mine.color || dupCount > 1;
-
-            if (needFix) {
-              const free = pickFreeColor(used);
-              used.add(free);
-
-              // 낙관적 반영 (상태 + presence + 서버)
-              next[myIdx] = { ...mine, color: free };
-              setServerMyColor(free);
-
-              const store = getPresence(roomKey);
-              store[me.id] = { ...(store[me.id] || {}), color: free, id: me.id, name: mine.name, picture: mine.picture, ts: mine.ts };
-              setPresence(roomKey, store);
-
-              changeColor(planId, free).catch(() => {});
-            }
-          }
-        }
-
         // 4) 정렬(입장 순)
         next.sort((a, b) => (a.ts || 0) - (b.ts || 0));
 
@@ -341,10 +314,10 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId }) {
           if (t - lastJoinTsRef.current > 500) {
             lastJoinTsRef.current = t;
             playJoinSound();
-            markNotificationsRead(planId).catch(() => {});
+            markNotificationsRead(planId).catch(() => { });
           }
         }
-      } catch {}
+      } catch { }
     };
 
     client.onConnect = () => {
@@ -353,8 +326,8 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId }) {
     };
 
     return () => {
-      try { sub?.unsubscribe(); } catch {}
-      try { client.deactivate(); } catch {}
+      try { sub?.unsubscribe(); } catch { }
+      try { client.deactivate(); } catch { }
       stompReadyRef.current = false;
     };
   }, [planId, me]);
@@ -432,7 +405,10 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId }) {
             const isMe = me && m.id === me.id;
             const pic = normalizeGooglePhoto(m.picture);
             const initial = m.name || "User";
-            const ringColor = isMe ? (myColor || m.color || "#8a2be2") : (m.color || "#ccc");
+            const ringColor = (() => {
+              const srv = colorsByMember?.get?.(String(m.memberId ?? m.id));
+              return srv ?? m.color ?? (isMe ? "#8a2be2" : "#ccc");
+            })();
             return (
               <AvatarRing
                 key={m.id}

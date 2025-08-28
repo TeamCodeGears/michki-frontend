@@ -88,7 +88,14 @@ export async function getPlan(planId) {
 
 // 방 나가기 / 삭제
 export async function leavePlan(planId) {
-  await fetchJson(`/plans/${planId}`, jsonInit());
+  const res = await fetchJson(`/plans/${planId}`, jsonInit()); // POST
+  // 서버는 { message: "방 ... 성공" } 형태로 응답
+  if (res && typeof res === "object" && "message" in res) {
+    return res.message;
+  }
+  // 혹시 백엔드가 문자열을 줄 수도 있으니 폴백
+  if (typeof res === "string" && res.trim()) return res;
+  return "방 나가기 완료";
 }
 export async function deletePlan(planId) {
   await fetchJson(`/plans/${planId}`, jsonInit());
@@ -106,8 +113,9 @@ export async function getSharedPlan(shareURI) {
 }
 
 // 색상 변경
-export async function changeColor(planId, color) {
-  await fetchJson(`/plans/${planId}/newColor`, jsonInit({ color }));
+export async function changeColor(planId, hex) {
+  const color = hex.startsWith("#") ? hex : `#${hex}`;
+  return await fetchJson(`/plans/${planId}/newColor`, jsonInit({ color }));
 }
 
 // 내 색상 조회
@@ -125,6 +133,7 @@ export async function getMyColorViaPlan(planId, { memberId, nickname }) {
 }
 
 // 알림 읽음 처리
-export async function markNotificationsRead(planId) {
-  return await fetchJson(`/plans/notifications/read`, jsonInit({ planId }));
+export async function markNotificationsRead() {
+  // 빈 POST (토큰만 필요)
+  return await fetchJson(`/plans/notifications/read`, { method: "POST" });
 }

@@ -1,4 +1,3 @@
-// src/main.jsx
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -17,7 +16,7 @@ import TermsPage from "./pages/TermsPage.jsx";
 import PrivacyPage from "./pages/PrivacyPage.jsx";
 import Schedule from "./pages/Schedule.jsx";
 import { LanguageProvider } from "./context/LanguageContext";
-import ShareGate from "./routes/ShareGate.jsx";
+
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 // 에러 화면
@@ -54,9 +53,12 @@ const router = createBrowserRouter([
       { path: "terms", element: <TermsPage /> },
       { path: "privacy", element: <PrivacyPage /> },
 
-      // 일정 페이지
+      // 일정 페이지 (일반/플랜ID)
       { path: "schedule", element: <Schedule /> },
       { path: "schedule/:planId", element: <Schedule /> },
+
+      // 🔗 공유 보기 (shareURI)
+      { path: "share/:shareURI", element: <Schedule /> },
 
       // 최종 404 캐치
       { path: "*", element: <NotFound /> },

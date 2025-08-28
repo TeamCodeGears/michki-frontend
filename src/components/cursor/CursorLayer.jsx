@@ -8,41 +8,35 @@ import createPlanStompClient, {
 } from "../../socket/planSocket";
 import "./CursorLayer.css";
 
-const COLORS = ["#ff4d4f","#fa8c16","#fadb14","#52c41a","#1677ff","#722ed1","#eb2f96","#13c2c2","#2f54eb"];
 const BUBBLE_MS = 4000;
 
 /* ========================= utils ========================= */
-function hashColor(memberId){
-  if (!memberId && memberId !== 0) return COLORS[0];
-  const n = Math.abs(String(memberId).split("").reduce((a,ch)=> (a*33 + ch.charCodeAt(0))|0,5381));
-  return COLORS[n % COLORS.length];
-}
-function clamp01(v){ return v<0?0 : v>1?1 : v; }
-function formatRelative(ts){
-  const sec = Math.max(1, Math.floor((Date.now()-ts)/1000));
-  if (sec<60) return `${sec}초 전`;
-  const m = Math.floor(sec/60);
-  if (m<60) return `${m}분 전`;
-  const h = Math.floor(m/60);
+function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+function formatRelative(ts) {
+  const sec = Math.max(1, Math.floor((Date.now() - ts) / 1000));
+  if (sec < 60) return `${sec}초 전`;
+  const m = Math.floor(sec / 60);
+  if (m < 60) return `${m}분 전`;
+  const h = Math.floor(m / 60);
   return `${h}시간 전`;
 }
-function getPresence(roomKey){ try{ return JSON.parse(localStorage.getItem(`presence:${roomKey}`)||"{}"); }catch{ return {}; } }
-function setPresence(roomKey, presence){
+function getPresence(roomKey) {
+  try { return JSON.parse(localStorage.getItem(`presence:${roomKey}`) || "{}"); }
+  catch { return {}; }
+}
+function setPresence(roomKey, presence) {
   try { localStorage.setItem(`presence:${roomKey}`, JSON.stringify(presence || {})); } catch {}
 }
-function getColorFromPresence(roomKey, memberId){
-  const p = getPresence(roomKey); return p?.[String(memberId)]?.color;
-}
-function getAvatarFromPresence(roomKey, memberId){
+function getAvatarFromPresence(roomKey, memberId) {
   const p = getPresence(roomKey); return p?.[String(memberId)]?.picture || "";
 }
-function getNameFromPresence(roomKey, memberId){
+function getNameFromPresence(roomKey, memberId) {
   const p = getPresence(roomKey); return p?.[String(memberId)]?.name || p?.[String(memberId)]?.nickname || "";
 }
-function sanitizeChatText(t){
+function sanitizeChatText(t) {
   if (!t) return "";
-  let s = String(t).replace(/[\u0000-\u001F\u007F]/g,"");
-  if (s.length > 500) s = s.slice(0,500);
+  let s = String(t).replace(/[\u0000-\u001F\u007F]/g, "");
+  if (s.length > 500) s = s.slice(0, 500);
   return s.trim();
 }
 function isTypingInInput() {
@@ -50,18 +44,20 @@ function isTypingInInput() {
   if (!el) return false;
   const tag = el.tagName?.toLowerCase();
   const editable = el.getAttribute?.("contenteditable");
-  return (
-    tag === "input" ||
-    tag === "textarea" ||
-    tag === "select" ||
-    editable === "" ||
-    editable === "true"
-  );
+  return (tag === "input" || tag === "textarea" || tag === "select" || editable === "" || editable === "true");
 }
 
 /* ========================= component ========================= */
-export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, map }) {
-  const token = useMemo(() => { try{ return localStorage.getItem("accessToken") || undefined; }catch{ return undefined; } }, []);
+export default function CursorLayer({
+  planId,
+  currentUser,
+  isLoggedIn,
+  roomKey,
+  map,
+  /** Map<string(memberId), string(hexColor)> — 서버가 내려준 색만 담긴 맵 */
+  colorsByMember,
+}) {
+  const token = useMemo(() => { try { return localStorage.getItem("accessToken") || undefined; } catch { return undefined; } }, []);
   const myMemberId = currentUser?.memberId ?? currentUser?.id ?? null;
   const myNickname = currentUser?.nickname || currentUser?.name || "Me";
   const myAvatar = currentUser?.picture || "";
@@ -74,7 +70,14 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
 
   const mapReady = !!map;
 
-  /* ----- 내 presence 보강 ----- */
+  // 서버색 조회 helper
+  const getServerColor = useCallback((memberId) => {
+    if (memberId == null) return null;
+    const id = String(memberId);
+    return colorsByMember?.get?.(id) ?? null;
+  }, [colorsByMember]);
+
+  /* ----- 내 presence 보강(이름/사진만) ----- */
   useEffect(() => {
     if (!roomKey || !myMemberId) return;
     const p = getPresence(roomKey);
@@ -83,7 +86,7 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
       ...cur,
       name: myNickname || cur.name || cur.nickname || `User ${myMemberId}`,
       picture: myAvatar || cur.picture || "",
-      color: cur.color || hashColor(myMemberId),
+      // ❌ 색은 저장하지 않음(서버만 신뢰)
     };
     p[String(myMemberId)] = next;
     setPresence(roomKey, p);
@@ -100,18 +103,18 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
 
         // 커서 수신
         subscribePlanMouse(client, planId, (msg) => {
-          try{
-            const { memberId, x, y, color, nickname, ts } = JSON.parse(msg.body);
-            if (memberId==null) return;
+          try {
+            const { memberId, x, y, /* color */ nickname, ts } = JSON.parse(msg.body);
+            if (memberId == null) return;
 
             setCursors((prev) => {
               const prevCur = prev[memberId];
-              const presenceColor = getColorFromPresence(roomKey, memberId);
-              const presenceName  = getNameFromPresence(roomKey, memberId);
+              const presenceName = getNameFromPresence(roomKey, memberId);
+              const serverColor = getServerColor(memberId);
 
               const nextCur = {
                 x: clamp01(x), y: clamp01(y),
-                color: color || presenceColor || prevCur?.color || hashColor(memberId),
+                color: serverColor ?? prevCur?.color ?? null,
                 nickname: nickname || presenceName || prevCur?.nickname || `User ${memberId}`,
                 ts: ts || Date.now(),
                 bubble: prevCur?.bubble,
@@ -119,27 +122,28 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
               };
               if (
                 !prevCur ||
-                prevCur.x!==nextCur.x || prevCur.y!==nextCur.y ||
-                prevCur.color!==nextCur.color || prevCur.nickname!==nextCur.nickname ||
-                prevCur.ts!==nextCur.ts
+                prevCur.x !== nextCur.x || prevCur.y !== nextCur.y ||
+                prevCur.color !== nextCur.color || prevCur.nickname !== nextCur.nickname ||
+                prevCur.ts !== nextCur.ts
               ) {
                 return { ...prev, [memberId]: nextCur };
               }
               return prev;
             });
-          }catch(e){ console.error("parse mouse", e); }
+          } catch (e) { console.error("parse mouse", e); }
         });
 
         // 채팅 수신
         subscribePlanChat(client, planId, (msg) => {
-          try{
+          try {
             const cm = JSON.parse(msg.body);
             const { memberId, nickname, avatar, ts } = cm;
-            if (memberId==null) return;
+            if (memberId == null) return;
 
             const safeText = sanitizeChatText(cm.message ?? cm.text ?? cm.msg ?? "");
             const pic = avatar || getAvatarFromPresence(roomKey, memberId) || "";
             const presenceName = getNameFromPresence(roomKey, memberId);
+            const serverColor = getServerColor(memberId);
 
             const until = Date.now() + BUBBLE_MS;
             setCursors((prev) => {
@@ -149,13 +153,13 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
                 [memberId]: {
                   ...cur,
                   nickname: nickname || presenceName || cur.nickname || `User ${memberId}`,
-                  color: cur.color || getColorFromPresence(roomKey, memberId) || hashColor(memberId),
+                  color: serverColor ?? cur.color ?? null,
                   avatar: cur.avatar || pic,
                   bubble: { text: safeText, until, ts: ts || Date.now() },
                 },
               };
             });
-          }catch(e){ console.error("parse chat", e); }
+          } catch (e) { console.error("parse chat", e); }
         });
       },
       onDisconnect: () => setConnected(false),
@@ -169,7 +173,7 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
       stompRef.current = null;
       setConnected(false);
     };
-  }, [planId, token, roomKey]);
+  }, [planId, token, roomKey, getServerColor]);
 
   /* ----- 전역 마우스 좌표 추적 ----- */
   useEffect(() => {
@@ -197,22 +201,22 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
         const y = clamp01(e.clientY / window.innerHeight);
         myCursorRef.current = { x, y };
 
-        try{
+        try {
+          // ❌ color는 보내지 않음(서버색만 신뢰)
           sendPlanMouse(stompRef.current, planId, {
             x, y,
             memberId: myMemberId || undefined,
             nickname: myNickname,
-            color: getColorFromPresence(roomKey, myMemberId) || undefined,
             ts: Date.now(),
           });
-        }catch{}
+        } catch { }
         ticking = false;
       });
     };
 
     window.addEventListener("mousemove", onMoveAndPublish, { passive: true });
     return () => window.removeEventListener("mousemove", onMoveAndPublish);
-  }, [connected, isLoggedIn, planId, myMemberId, myNickname, roomKey]);
+  }, [connected, isLoggedIn, planId, myMemberId, myNickname]);
 
   /* ----- 버블 수명 관리 ----- */
   useEffect(() => {
@@ -232,25 +236,8 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
     return () => clearInterval(id);
   }, []);
 
-  /* ----- presence 색상 반영 ----- */
-  useEffect(() => {
-    if (!roomKey) return;
-    const tick = () => {
-      setCursors((prev) => {
-        const p = getPresence(roomKey);
-        let changed = false; const next = { ...prev };
-        for (const [mid, cur] of Object.entries(next)) {
-          const pc = p?.[String(mid)]?.color;
-          if (pc && pc !== cur.color) { next[mid] = { ...cur, color: pc }; changed = true; }
-        }
-        return changed ? next : prev;
-      });
-    };
-    const onStorage = (e) => { if (e.key === `presence:${roomKey}`) tick(); };
-    window.addEventListener("storage", onStorage);
-    const i = setInterval(tick, 1000);
-    return () => { window.removeEventListener("storage", onStorage); clearInterval(i); };
-  }, [roomKey]);
+  /* ----- 로컬 presence의 색 반영 로직 제거 (서버만 사용) ----- */
+  // (의도적으로 없음)
 
   /* ----- 채팅 입력 상태 ----- */
   const [chatOpen, setChatOpen] = useState(false);
@@ -288,14 +275,15 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
           x: cur.x ?? myCursorRef.current.x ?? 0.5,
           y: cur.y ?? myCursorRef.current.y ?? 0.5,
           nickname: myNickname,
-          color: cur.color || getColorFromPresence(roomKey, myMemberId) || hashColor(myMemberId),
+          // 서버색만 사용
+          color: getServerColor(myMemberId) ?? cur.color ?? null,
           avatar: cur.avatar || getAvatarFromPresence(roomKey, myMemberId) || "",
           bubble: { text: safe, until, ts: Date.now() },
         },
       };
     });
 
-    // (2) 서버 발행 — ✅ 항상 `message` 키
+    // (2) 서버 발행 — 항상 `message` 키
     if (connected && stompRef.current && planId) {
       const payload = {
         id: `${myMemberId || "me"}-${Date.now()}`,
@@ -306,17 +294,16 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
         avatar: getAvatarFromPresence(roomKey, myMemberId) || undefined,
         ts: Date.now(),
       };
-      console.log("[VERIFY:CALL:sendPlanChat] payload.message =", payload.message);
-      try{
+      try {
         sendPlanChat(stompRef.current, planId, payload, { receipt: `rcpt-${Date.now()}` });
-      }catch(e){
+      } catch (e) {
         console.error("[CHAT:PUBLISH:ERROR]", e);
       }
     }
 
     setChatText("");
     setChatOpen(false);
-  }, [chatText, connected, myMemberId, myNickname, planId, roomKey]);
+  }, [chatText, connected, myMemberId, myNickname, planId, roomKey, getServerColor]);
 
   if (!mapReady) return null;
   const myPos = myCursorRef.current;
@@ -328,7 +315,8 @@ export default function CursorLayer({ planId, currentUser, isLoggedIn, roomKey, 
         {Object.entries(cursors).map(([memberId, cur]) => {
           const left = `${(cur.x ?? 0.5) * 100}vw`;
           const top  = `${(cur.y ?? 0.5) * 100}vh`;
-          const color = cur.color || hashColor(memberId);
+          // 서버색 없을 때만 임시 색(최소한의 가독성)
+          const color = cur.color || "#1677ff";
           return (
             <div key={memberId} className="cursor-item" style={{ left, top }}>
               <svg className="cursor-icon" width="22" height="22" viewBox="0 0 24 24" style={{ stroke: color, fill: "white" }} xmlns="http://www.w3.org/2000/svg" aria-hidden>
