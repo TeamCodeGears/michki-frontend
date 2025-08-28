@@ -614,9 +614,6 @@ const formatKDate = (d) =>
           });
           await refreshPinsFromServer();
 
-          if (activeCategory === "__recommended__" && showCategoryList) {
-            handleNearbySearch("__recommended__", { forceRefresh: true });
-          }
         } catch (err) {
           console.error("자유핀 저장 실패:", err);
           alert("자유 핀 저장 실패: " + err.message);
