@@ -1,12 +1,10 @@
+// src/components/RoomPresenceDock.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { getPlan, getMyColorViaPlan, markNotificationsRead } from "../api/plans";
 import createPlanStompClient, {
-  // ✅ 추가된 헬퍼들
   subscribePlanOnline,
   subscribePlanColor,
   sendPlanColorChange,
-  // 기존에 쓰던 채팅 브로드캐스트가 필요하면 유지
-  sendPlanChat,
 } from "../socket/planSocket";
 
 /* ========================= helpers & constants ========================= */
@@ -124,6 +122,9 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId, colorsB
   const stompReadyRef = useRef(false);
   const stompRef = useRef(null);
   const initialSyncedRef = useRef(false);
+  // 멤버별 최초 입장 시각(또는 순번)을 보관
+  const joinTsRef = useRef(new Map());   // key: memberId(string) -> number
+  const joinSeqRef = useRef(0);          // joinedAt이 없을 때 순번 대체
   const lastJoinTsRef = useRef(0);
   const audioRef = useRef(null);
 
@@ -173,11 +174,6 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId, colorsB
     return c ?? null;
   }, [me, colorsByMember]);
 
-  const pickFreeColor = (usedColorsSet) => {
-    for (const c of PALETTE) if (!usedColorsSet.has(c)) return c;
-    return PALETTE[0];
-  };
-
   /* ==== 초기(내 색 불러오기) ==== */
   useEffect(() => {
     if (!roomKey || !me || !planId) return;
@@ -198,7 +194,7 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId, colorsB
           nickname: me.nickname,
         });
         setServerMyColor(c ?? null);
-        await onColorSaved?.();
+        onColorSaved?.({ memberId: me.memberId ?? me.id, color: c ?? null });
       } catch (e) {
         const sc = e?.response?.status;
         if (sc === 404) console.warn(`Plan ${planId} not found/inaccessible.`);
@@ -208,13 +204,13 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId, colorsB
       // 로컬 presence에 내 정보 반영
       const pic = normalizeGooglePhoto(me.picture);
       if (!store[me.id]) {
-        store[me.id] = { id: me.id, name: me.name, picture: pic, color: serverMyColor ?? null, ts: now };
+        store[me.id] = { id: me.id, name: me.name, picture: pic, color: c ?? null, ts: now };
       } else {
         store[me.id] = {
           ...store[me.id],
           name: me.name,
           picture: pic,
-          color: serverMyColor ?? store[me.id].color ?? null,
+          color: c ?? store[me.id].color ?? null,
           ts: store[me.id].ts ?? now,
         };
       }
@@ -237,7 +233,7 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId, colorsB
       delete s[me.id];
       setPresence(roomKey, s);
     };
-  }, [roomKey, me, planId, serverMyColor, onColorSaved]);
+  }, [roomKey, me, planId, onColorSaved]); // serverMyColor는 의존성 제외(가드 존재)
 
   /* ==== STOMP 온라인 목록 & 색상 변경 구독 ==== */
   useEffect(() => {
@@ -255,7 +251,15 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId, colorsB
     let subOnline;
     let subColor;
 
-    // 1) 먼저 핸들러들을 선언
+    const byJoinStable = (a, b) => {
+      const ta = a?.ts ?? 0;
+      const tb = b?.ts ?? 0;
+      if (ta !== tb) return ta - tb;
+      const ida = String(a?.memberId ?? a?.id ?? "");
+      const idb = String(b?.memberId ?? b?.id ?? "");
+      return ida < idb ? -1 : ida > idb ? 1 : 0;
+    };
+
     const handleOnlineListMsg = (msg) => {
       try {
         const list = JSON.parse(msg.body || "[]");
@@ -264,14 +268,28 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId, colorsB
         const prev = membersRef.current;
         const prevById = new Map(prev.map((p) => [String(p.id), p]));
         const prevIds = memberIdsRef.current;
-        const now = Date.now();
 
-        let next = list.map((m, idx) => {
+        // ⬇️ 기존 presence 먼저 가져와서 저장된 ts(=join order)를 우선 고려
+        const store = getPresence(roomKey);
+
+        let next = list.map((m) => {
           const idStr = String(m.memberId ?? m.id);
           const prevItem = prevById.get(idStr);
-          const rawPic =
-            m.profileImage || m.picture || m.profileImageUrl || m.photoUrl || "";
+          const rawPic = m.profileImage || m.picture || m.profileImageUrl || m.photoUrl || "";
           const picture = normalizeGooglePhoto(rawPic || prevItem?.picture || "");
+
+          // ✅ ts(=join order) 확정 규칙:
+          //  (1) 이미 localStorage에 저장된 ts가 있으면 그걸 최우선 사용
+          //  (2) 아니면 서버가 준 joinedAt 사용
+          //  (3) 둘 다 없으면 증가하는 순번으로 고정
+          if (!joinTsRef.current.has(idStr)) {
+            const storedTs = store?.[idStr]?.ts;
+            const fixed = Number.isFinite(storedTs)
+              ? storedTs
+              : (Number.isFinite(m?.joinedAt) ? m.joinedAt : (++joinSeqRef.current));
+            joinTsRef.current.set(idStr, fixed);
+          }
+          const ts = joinTsRef.current.get(idStr);
 
           return {
             id: idStr,
@@ -279,28 +297,32 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId, colorsB
             name: m.nickname || m.name || prevItem?.name || "User",
             nickname: m.nickname || m.name || prevItem?.nickname || "User",
             picture,
-            color: m.color ?? prevItem?.color ?? null,
-            ts: prevItem?.ts ?? m.joinedAt ?? now + idx,
+            color: m.color ?? colorsByMember?.get?.(idStr) ?? prevItem?.color ?? null,
+            ts,
           };
         });
 
-        const store = getPresence(roomKey);
+        // presence 반영
+
         next.forEach((m) => {
-          const old = store[m.id] || {};
+          const prevEntry = store[m.id] || {};
           store[m.id] = {
-            ...old,
+            ...prevEntry,
             id: m.id,
             name: m.name,
             picture: m.picture,
-            color: m.color ?? old.color ?? null,
-            ts: old.ts ?? m.ts,
+            color: m.color ?? colorsByMember?.get?.(String(m.id)) ?? prevEntry.color ?? null,
+
+            // ✅ ts는 위에서 확정한 값으로 항상 저장(새로고침 후에도 유지됨)
+            ts: joinTsRef.current.get(String(m.id)),
           };
         });
         setPresence(roomKey, store);
 
-        next.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+        next.sort(byJoinStable);
         setMembers(next);
 
+        // 새로 들어온 사람 판단하여 알림음
         const currentIds = new Set(list.map((m) => String(m.memberId ?? m.id)));
         let someoneNew = false;
         currentIds.forEach((id) => {
@@ -323,43 +345,52 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId, colorsB
     const handleColorMsg = (msg) => {
       try {
         const raw = JSON.parse(msg.body || "null");
-
-        // 1) 권장 payload: { memberId, color }
         if (raw && typeof raw === "object" && "memberId" in raw && "color" in raw) {
           const memberId = String(raw.memberId);
           const color = String(raw.color);
-
-          // presence 업데이트
           const store = getPresence(roomKey);
           if (!store[memberId]) store[memberId] = { id: memberId, ts: Date.now() };
           store[memberId].color = color;
           setPresence(roomKey, store);
-
-          // UI 반영
-          setMembers(prev =>
-            prev.map(m => (String(m.memberId ?? m.id) === memberId ? { ...m, color } : m))
-          );
-          return;
+          setMembers((prev) => {
+            const idx = prev.findIndex((m) => String(m.memberId ?? m.id) === memberId);
+            if (idx >= 0) {
+              // 기존 멤버 색만 교체(순서 보존)
+              const copy = prev.slice();
+              copy[idx] = { ...copy[idx], color };
+              return copy;
+            }
+            // ✅ 멤버가 아직 없다면 presence 정보로 "임시 멤버" 추가
+            const p = store[memberId] || {};
+            // ts 확정: 기존 joinTsRef 값 → store.ts → 최후 수단 joinSeq 증가
+            if (!joinTsRef.current.has(memberId)) {
+              const fixed = Number.isFinite(p.ts) ? p.ts : (++joinSeqRef.current);
+              joinTsRef.current.set(memberId, fixed);
+            }
+            const newcomer = {
+              id: memberId,
+              memberId: memberId,
+              name: p.name || p.nickname || "User",
+              nickname: p.nickname || p.name || "User",
+              picture: p.picture || "",
+              color,
+              ts: joinTsRef.current.get(memberId),
+            };
+            const arr = prev.concat(newcomer);
+            // 처음 들어온 순서대로 안정 정렬
+            arr.sort(byJoinStable);
+            return arr;
+          });
         }
-
-        // 2) 과거 호환: 단순 문자열이면 누가 바꿨는지 몰라서 스킵
-        if (typeof raw === "string") {
-          console.warn("[color] payload는 문자열만 수신됨. memberId가 없어 적용 불가:", raw);
-        }
-      } catch (e) {
-        console.warn("handleColorMsg parse error:", e);
-      }
+      } catch { }
     };
 
-
-    // 2) onConnect를 한 번만 설정 (activate 이전!)
     client.onConnect = () => {
       stompReadyRef.current = true;
       subOnline = subscribePlanOnline(client, planId, handleOnlineListMsg);
       subColor = subscribePlanColor(client, planId, handleColorMsg);
     };
 
-    // 3) 이제 activate
     client.activate();
 
     return () => {
@@ -371,18 +402,27 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId, colorsB
     };
   }, [planId, me, roomKey]);
 
+  const byJoinStable = (a, b) => {
+    const ta = a?.ts ?? 0;
+    const tb = b?.ts ?? 0;
+    if (ta !== tb) return ta - tb;
+    const ida = String(a?.memberId ?? a?.id ?? "");
+    const idb = String(b?.memberId ?? b?.id ?? "");
+    return ida < idb ? -1 : ida > idb ? 1 : 0;
+  };
+
+  const sortedMembers = useMemo(() => {
+    return members.slice().sort(byJoinStable);
+  }, [members]);
 
   /* ==== UI ==== */
-
   const hasMembers = roomKey && members.length > 0;
-
   const openPickerForMe = (evt) => {
     const rect = evt.currentTarget.getBoundingClientRect();
     setPickerPos({ x: rect.left, y: rect.top });
     setPickerOpen((v) => !v);
   };
 
-  // 현재 방에서 다른 사람들이 쓰는 색(내 색 제외)
   const usedColors = useMemo(() => {
     const s = new Set();
     members.forEach((m) => {
@@ -396,37 +436,23 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId, colorsB
 
   const applyColor = async (hex) => {
     if (!me || !planId) return;
-
     if (usedColors.has(hex)) {
       alert("이미 다른 사용자가 선택한 색상입니다.");
       return;
     }
 
-    // 로컬 presence
     const store = getPresence(roomKey);
     if (store[me.id]) store[me.id].color = hex;
     setPresence(roomKey, store);
 
-    // UI 즉시 반영
     setMembers((prev) => prev.map((m) => (m.id === me.id ? { ...m, color: hex } : m)));
 
     try {
-      // ✅ REST 저장 대신 STOMP 브로드캐스트만 사용
       if (stompRef.current && stompReadyRef.current) {
         sendPlanColorChange(stompRef.current, planId, me.memberId ?? me.id, hex);
       }
       setServerMyColor(hex);
       onColorSaved?.({ memberId: me.memberId ?? me.id, color: hex });
-
-      // (선택) 기존 채팅 채널 우회 브로드캐스트 유지하고 싶으면 아래 주석 해제
-      // if (stompRef.current) {
-      //   sendPlanChat(stompRef.current, planId, {
-      //     __sys: "COLOR",
-      //     memberId: me.memberId ?? me.id,
-      //     color: hex,
-      //     ts: Date.now(),
-      //   });
-      // }
     } catch (e) {
       console.error("색 저장 실패:", e?.response?.status || e?.message);
     } finally {
@@ -450,37 +476,30 @@ export default function RoomPresenceDock({ roomKey, currentUser, planId, colorsB
       }}
     >
       {hasMembers &&
-        members
-          .slice()
-          .sort((a, b) => (a.ts || 0) - (b.ts || 0))
-          .map((m) => {
-            const isMe = me && m.id === me.id;
-            const pic = normalizeGooglePhoto(m.picture);
-            const initial = m.name || "User";
-            const ringColor = (() => {
-              // 1순위: 실시간 브로드캐스트로 갱신되는 m.color
-              if (m.color) return m.color;
-              // 2순위: 부모가 내려준 서버 스냅샷(colorsByMember)
-              const srv = colorsByMember?.get?.(String(m.memberId ?? m.id));
-              if (srv) return srv;
-              // 3순위: 기본값
-              return isMe ? "#8a2be2" : "#ccc";
-            })();
+        sortedMembers.map((m) => {
+          const isMe = me && m.id === me.id;
+          const pic = normalizeGooglePhoto(m.picture);
+          const initial = m.name || "User";
+          const ringColor = (() => {
+            if (m.color) return m.color;
+            const srv = colorsByMember?.get?.(String(m.memberId ?? m.id));
+            if (srv) return srv;
+            return isMe ? "#8a2be2" : "#ccc";
+          })();
 
-            return (
-              <AvatarRing
-                key={m.id}
-                picture={pic}
-                fallbackInitial={initial}
-                borderColor={ringColor}
-                size={40}
-                onClick={isMe ? openPickerForMe : undefined}
-                blocked={!isMe}
-              />
-            );
-          })}
+          return (
+            <AvatarRing
+              key={String(m.memberId ?? m.id)}
+              picture={pic}
+              fallbackInitial={initial}
+              borderColor={ringColor}
+              size={40}
+              onClick={isMe ? openPickerForMe : undefined}
+              blocked={!isMe}
+            />
+          );
+        })}
 
-      {/* 색상 선택 팝오버 */}
       {pickerOpen && (
         <div
           style={{

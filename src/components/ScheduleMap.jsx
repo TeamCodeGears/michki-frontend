@@ -102,6 +102,33 @@ const toPlainLatLng = (obj) => {
 const formatKDate = (d) =>
   d instanceof Date && !isNaN(d) ? d.toLocaleDateString("ko-KR").replace(/\./g, ".").replace(/\s/g, "") : "날짜 미지정";
 
+// PlanMemberDto[] → presence(localStorage)로 하이드레이트
+function hydratePresenceFromMembers(roomKey, members) {
+  try {
+    const key = `presence:${roomKey}`;
+    const store = JSON.parse(localStorage.getItem(key) || "{}");
+    for (const m of members || []) {
+      const id = String(m.memberId ?? m.id);
+      if (!id) continue;
+      const prev = store[id] || {};
+      store[id] = {
+        ...prev,
+        id,
+        // PlanMemberDto 기준: nickname / profileImage
+        name: m.nickname || prev.name || prev.nickname || `User ${id}`,
+        nickname: m.nickname || prev.nickname || prev.name || `User ${id}`,
+        picture: m.profileImage || prev.picture || "",
+        color: typeof m.color === "string" ? m.color : (prev.color ?? null),
+        // 색은 presence에 저장하지 않음(색은 CursorLayer의 color SOT로 관리)
+      };
+    }
+    localStorage.setItem(key, JSON.stringify(store));
+    // 같은 탭의 다른 컴포넌트에게 변경 통지
+    window.dispatchEvent(new StorageEvent("storage", { key }));
+  } catch { }
+}
+
+
 function ScheduleMap() {
   // === center sync helpers (컴포넌트 내부) ===
 
@@ -323,17 +350,6 @@ function ScheduleMap() {
               applyCenter(p, typeof msg.zoom === "number" ? msg.zoom : 14, { shouldBroadcast: false });
               return;
             }
-            if (msg?.__sys === "COLOR") {
-              const { memberId, color } = msg;
-              if (!memberId || !color) return;
-              // members 즉시 반영 → colorsByMember(useMemo) 재계산 → CursorLayer/Avatar 즉시 갱신
-              setMembers((prev) =>
-                prev.map((m) =>
-                  String(m.memberId ?? m.id) === String(memberId) ? { ...m, color } : m
-                )
-              );
-              return;
-            }
           } catch { }
         });
 
@@ -414,6 +430,7 @@ function ScheduleMap() {
           if (data.startDate && data.endDate) setDateRange([new Date(data.startDate), new Date(data.endDate)]);
           setShareUriState(data.shareURI || shareURI || null); // ✅ 추가: 서버 응답의 shareURI(없으면 라우트값)
           setMembers(data.members || []); // 공유 보기에서도 멤버 반영
+          hydratePresenceFromMembers(roomKey, data.members || []);
 
           // 로그인 상태면 서버가 자동 참여 처리 → 일반 모드로 전환
           if (isLoggedIn && data?.planId) {
@@ -460,6 +477,7 @@ function ScheduleMap() {
         setTitle(data.title ?? "여행");
         if (data.startDate && data.endDate) setDateRange([new Date(data.startDate), new Date(data.endDate)]);
         setMembers(data.members || []); // ✅ 서버 내려준 멤버/색만 사용
+        hydratePresenceFromMembers(roomKey, data.members || []);
         setShareUriState(data.shareURI || null); // ✅ 서버 응답의 shareURI 저장
 
         // places도 즉시 반영
@@ -1099,6 +1117,13 @@ function ScheduleMap() {
     }
   };
 
+  // members 변경 시 presence도 동기화 (닉네임/아바타 업데이트 반영)
+  useEffect(() => {
+    if (!roomKey) return;
+    hydratePresenceFromMembers(roomKey, members || []);
+  }, [roomKey, members]);
+
+
   if (!isLoaded) return <div>Loading...</div>;
 
   return (
@@ -1486,7 +1511,10 @@ function ScheduleMap() {
         />
       )}
     </div>
+
   );
+
 }
+
 
 export default ScheduleMap;

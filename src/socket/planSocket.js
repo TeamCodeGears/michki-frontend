@@ -31,7 +31,7 @@ export function createPlanStompClient({
         },
       }),
     connectHeaders: token ? { Authorization: `Bearer ${token}` } : {},
-    debug: (str) => console.log(`[STOMP] ${str}`),
+    //debug: (str) => console.log(`[STOMP] ${str}`),
     reconnectDelay: 3000,
     heartbeatIncoming: 10000,
     heartbeatOutgoing: 10000,
@@ -56,12 +56,12 @@ export function createPlanStompClient({
   const origPublish = client.publish.bind(client);
   client.publish = (args) => {
     try {
-      console.log("[PUB:DEST]", args?.destination);
+      //console.log("[PUB:DEST]", args?.destination);
       if (args?.body) {
         try {
           const obj = JSON.parse(args.body);
-          console.log("[PUB:BODY.keys]", Object.keys(obj));
-          console.log("[PUB:BODY.message]", obj.message);
+          //console.log("[PUB:BODY.keys]", Object.keys(obj));
+          //console.log("[PUB:BODY.message]", obj.message);
         } catch {
           console.log("[PUB:BODY(raw)]", String(args.body).slice(0, 200));
         }
