@@ -1,67 +1,155 @@
-import { useContext } from "react";
+// src/components/LoginButton.jsx
+import React, { useContext, useState } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import "./LoginButton.css";
 import googleIcon from "../assets/google-icon.webp";
 import { useGoogleLogin } from "@react-oauth/google";
-import { useNavigate } from "react-router-dom";
 import { LanguageContext } from "../context/LanguageContext";
-import { useAuth } from "../hooks/useAuth";
-import { googleLoginApi } from "../api/member";
+import { decodeJwt } from "../utils/jwt";   // ✅ JWT 디코더 추가
 
-function LoginButton() {
-  const { login } = useAuth();
+const API_BASE =
+  (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_BASE) ||
+  "http://localhost:8080";
+
+// 백엔드 로그인 API 호출
+async function googleLoginApi(code) {
+  const url = `${API_BASE}/member/google/login`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`구글 로그인 실패: ${res.status} ${text}`);
+  }
+  const data = await res.json();
+  console.log("@@백엔드 응답:", data);
+  return data;
+}
+
+function LoginButton({ isLoggedIn, setIsLoggedIn, setUser }) {
   const { texts } = useContext(LanguageContext);
   const navigate = useNavigate();
+  const location = useLocation();
 
-  const handleGoogleLoginSuccess = async (credentialResponse) => {
-    /* console.log("Google 로그인 성공! (백엔드 API 호출은 임시로 건너뜁니다.)", credentialResponse);*/
-    /*  const handleGoogleLoginSuccess = async (credentialResponse) => {*/
- try {
-      const { accessToken, refreshToken } = await googleLoginApi(credentialResponse.credential);
-      login(accessToken);
-      localStorage.setItem("refreshToken", refreshToken);
-      navigate("/dashboard");
+  // URL 파라미터: redirect, popup 모드 체크
+  const params = new URLSearchParams(location.search);
+  const redirectParam = params.get("redirect") || "/dashboard";
+  const isPopup = params.get("popup") === "1";
 
-    } catch (error) {
-      console.error("로그인 처리 중 오류 : ", error);
-      alert("로그인에 실패했습니다. 다시 시도해주세요.");
-    }
+  const [loading, setLoading] = useState(false);
+  const [errMsg, setErrMsg] = useState("");
 
-    /*
-     // --*프론트 엔드 테스트를 위함*--
-    login ("TEMPORAY_ACCESS_TOKEN") //임시 토큰 발행 
-    navigate('/dashboard'); // 대시보드 이동을 위함*/
-  };
+  const redirectUri =
+    (typeof import.meta !== "undefined" &&
+      import.meta.env?.VITE_GOOGLE_REDIRECT_URI) ||
+    window.location.origin;
 
-  const googleLogin = useGoogleLogin({
-    onSuccess: handleGoogleLoginSuccess,
-    onError: () => console.log("Google 로그인 실패"),
+  // ---- Google OAuth: auth-code flow ----
+  const loginWithCode = useGoogleLogin({
+    flow: "auth-code",
+    redirect_uri: redirectUri,
+    scope: "openid profile email",
+    onSuccess: async ({ code }) => {
+      setErrMsg("");
+      setLoading(true);
+      try {
+        // 1. 백엔드 로그인
+        const backendLogin = await googleLoginApi(code);
+        const { id, accessToken, refreshToken } = backendLogin || {};
+
+        // 2. 토큰 저장
+        if (accessToken) localStorage.setItem("accessToken", accessToken);
+        if (refreshToken) localStorage.setItem("refreshToken", refreshToken);
+
+        // 3. JWT payload에서 name/picture 추출
+        let user = { id: null, name: "User", picture: "" };
+        if (accessToken) {
+          const payload = decodeJwt(accessToken);
+          console.log("JWT payload:", payload);
+
+          user = {
+            id: id ?? payload.memberId ?? payload.id ?? null,
+            name: payload.nickname || payload.name || "User",
+            picture: payload.profileImage || payload.picture || "",
+          };
+        }
+
+        // 4. user 상태 저장
+        localStorage.setItem("user", JSON.stringify(user));
+        setUser(user);
+        setIsLoggedIn(true);
+
+        // 5. 팝업/리다이렉트 분기
+        if (isPopup) {
+          try {
+            window.opener?.postMessage({ type: "login-success" }, window.location.origin);
+          } catch (e) {
+            console.warn("postMessage 실패(무시 가능):", e);
+          }
+          window.close();
+        } else {
+          navigate(redirectParam, { replace: true });
+        }
+      } catch (err) {
+        console.error("로그인 실패:", err);
+        setIsLoggedIn(false);
+        setErrMsg(err?.message || "로그인 중 오류가 발생했습니다.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    onError: (err) => {
+      console.error("구글 로그인 중 오류 발생:", err);
+      setErrMsg("구글 로그인 중 오류가 발생했습니다.");
+    },
   });
-  /*
-    console.log("로그인 성공!", credentialResponse);
-    setIsLoggedIn(true);
-    navigate('/dashboard');
-  };
 
-  const handleLoginError = () => {
-    console.log('로그인 실패');
-  };
-  
-  const login = useGoogleLogin({
-    onSuccess: handleLoginSuccess,
-    onError: handleLoginError,
-  });
-  */
+  // ---- 로그인된 상태라면 "시작하기" 버튼 ----
+  const handleStartClick = () => navigate("/dashboard");
 
+  if (isLoggedIn) {
+    return (
+      <button
+        className="start-button"
+        onClick={handleStartClick}
+        aria-label="시작하기"
+      >
+        {texts.start}
+      </button>
+    );
+  }
+
+  // ---- 로그인 버튼 UI ----
   return (
     <div className="login-button-container">
-      <button className="login-button" onClick={() => googleLogin()}>
+      <button
+        className="login-button"
+        onClick={() => loginWithCode()}
+        disabled={loading}
+        aria-busy={loading}
+      >
         <img
           src={googleIcon}
           alt="구글 로그인 아이콘"
           className="google-icon"
         />
-        <span>{texts.login}</span>
+        <span>{loading ? "로그인 중..." : texts.login}</span>
       </button>
+
+      {errMsg ? (
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: 12,
+            color: "#c00",
+            wordBreak: "break-all",
+          }}
+        >
+          {errMsg}
+        </div>
+      ) : null}
     </div>
   );
 }

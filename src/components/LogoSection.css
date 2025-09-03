@@ -1,5 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@100..900&family=Phudu:wght@300..900&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Jua&family=Noto+Sans+KR:wght@100..900&family=Phudu:wght@300..900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@100..900&family=Phudu:wght@300..900&family=Jua&display=swap');
 
 .logo-section-link,
 .logo-section-link:visited {
@@ -9,10 +8,11 @@
 
 .logo-section {
   position: absolute;
-  left: 50px; /* Figma의 Frame left 값 */
-  top: 50px; /* Figma의 Frame top 값 */
-  width: 300px; /* Figma의 Frame width 값 */
-  height: 300px; /* Figma의 Frame height 값 */
+  left: 50px;
+  top: 50px;
+  width: 300px;
+  height: 300px;
+  z-index: 10;
 }
 
 .logo-frame {
@@ -23,25 +23,24 @@
 
 .logo {
   position: absolute;
-  left: -20px; 
-  top: -20px; 
-  width: 150px; 
-  height: 150px; 
+  left: -20px;
+  top: -20px;
+  width: 100px;
+  height: 100px;
   background-blend-mode: darken;
   border-radius: 124px;
 }
 
 .logo-text-group {
   position: absolute;
-  left: 95px; /* Figma의 道記 left 값 */
-  top: 67px; /* Figma의 道記 top 값 */
+  left: 70px;
+  top: 20px;
 }
 
 .logo-title-kanji {
   font-family: 'Phudu', sans-serif;
-  font-style: normal;
   font-weight: 400;
-  font-size: 40px;
+  font-size: 35px;
   line-height: 49px;
   text-align: center;
   color: #000000;
@@ -49,18 +48,14 @@
   white-space: nowrap;
 }
 
-.logo-title-en { /*michiki 영어*/
+.logo-title-en {
   position: absolute;
-  left: -70px; /* Michiki left 값*/
-  top: 35px; /* Michiki top 값*/
-  font-family: 'Jua', sans-serif; 
-  font-style: normal;
+  left: -40px;
+  top: 40px;
+  font-family: 'Jua', sans-serif;
   font-weight: 400;
-  font-size: 50px;
+  font-size: 40px;
   line-height: 62px;
   text-align: center;
   color: #000000;
-}
-
-.frame-image {
 }

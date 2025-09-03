@@ -1,41 +1,62 @@
-import { useState } from 'react';
-import './YearSelector.css';
+import { useState } from "react";
 
-function YearSelector() {
+export default function YearSelector({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const year = value ?? new Date().getFullYear();
 
-    // 드롭다운 메뉴 열렸나, 안 열렸나 기억하는거
-    const [ isOpen, setIsOpen ] = useState (false);
-    // 선택된 년도 기억할 것 (*기본값은 2025로)
-    const [ selectedYear, setSelectedYear ] = useState('2025');
+  const setYear = (y) => {
+    onChange?.(y);
+    setOpen(false);
+  };
 
-    // 선택 가능한 연도 나열
-    const years = Array.from({ length: 10 }, (_, i) => (2025 - i).toString());
+  return (
+    <div className="year-selector" style={{ userSelect: "none" }}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "10px 14px",
+          borderRadius: 10,
+          border: "1px solid #ddd",
+          background: "transparent",
+          color: "#FAF5EB",
+          fontSize: 20,
+          cursor: "pointer",
+        }}
+      >
+        {year} ▼
+      </button>
 
-    // 연도 선택시 실행될 함수식
-    const handleYearSelect = (year) => {
-        setSelectedYear (year);  // 선택된 연도로 상태 변경
-        setIsOpen (false);       // 메뉴 닫기 기능
-    };
-
-    return (
-        <div className = "year-selector-container">
-            <div className = "selected-year-display" onClick = {() => setIsOpen(!isOpen)}>
-                <span>{selectedYear}</span>
-                <span>▼</span>
+      {open && (
+        <div
+          style={{
+            marginTop: 8,
+            background: "#fff",
+            borderRadius: 10,
+            overflow: "hidden",
+          }}
+        >
+          {[year - 1, year, year + 1].map((y) => (
+            <div
+              key={y}
+              onClick={() => setYear(y)}
+              style={{
+                padding: "10px 12px",
+                cursor: "pointer",
+                borderBottom: "1px solid #eee",
+                color: "#333",
+                background: y === year ? "#f5f5f5" : "#fff",
+              }}
+            >
+              {y}
             </div>
-
-            {/* isOpen 이 true일 때만 드롭다운 메뉴 표시 */}
-            {isOpen && (
-                <ul className = "year-dropdown-list">
-                    {years.map(year => (
-                        <li key = {year} onClick = {() => handleYearSelect (year)}>
-                            {year}
-                        </li>
-                    ))}
-                </ul>
-            )}
+          ))}
         </div>
-    );
+      )}
+    </div>
+  );
 }
-
-export default YearSelector;

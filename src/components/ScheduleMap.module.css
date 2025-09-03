@@ -1,0 +1,240 @@
+:root {
+    --bg-app: #fffbe5;
+    --panel-bg: #46463c;
+    --panel-border: #e2d5bb;
+    --chip-bg: #faf5eb;
+    --chip-bg-2: #e2d5bb;
+    --text-dark: #222;
+}
+
+.page {
+    display: flex;
+    height: 100vh;
+    background: var(--bg-app);
+}
+
+/* Left panel */
+.leftPanel {
+    width: 350px;
+    background: var(--panel-bg);
+    color: #333;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    border-right: 1px solid var(--panel-border);
+    box-sizing: border-box;
+    z-index: 100;
+}
+
+.topActions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.logoBtn {
+    border: none;
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+}
+
+.chipBtn {
+    background: var(--chip-bg);
+    color: var(--text-dark);
+    border: none;
+    border-radius: 8px;
+    padding: 7px 13px;
+    font-weight: 600;
+    font-size: 14px;
+    height: 34px;
+    min-width: 52px;
+    cursor: pointer;
+}
+
+.toggle {
+    background: var(--chip-bg-2);
+}
+
+/* OFF */
+.toggleOn {
+    background: var(--chip-bg);
+}
+
+/* ON */
+.leaveBtn {
+    font-weight: 700;
+    min-width: 82px;
+}
+
+.titleInput {
+    font-weight: 600;
+    font-size: 18px;
+    color: var(--text-dark);
+    background: var(--chip-bg);
+    border: none;
+    border-radius: 10px;
+    padding: 9px 15px;
+    width: 100%;
+    margin-bottom: 6px;
+    box-sizing: border-box;
+}
+
+.dateBtn {
+    background: var(--chip-bg);
+    border: none;
+    border-radius: 10px;
+    padding: 9px 15px;
+    font-weight: 600;
+    font-size: 16px;
+    color: var(--text-dark);
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
+}
+
+.datePickerWrap {
+    position: absolute;
+    top: 45px;
+    left: 0;
+    z-index: 100;
+}
+
+.dayDropdownWrap {
+    position: relative;
+    margin-bottom: 5px;
+}
+
+.dayBtn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--chip-bg);
+    color: var(--text-dark);
+    border: none;
+    border-radius: 8px;
+    padding: 8px 15px;
+    font-weight: 600;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+.dayList {
+    background: var(--chip-bg);
+    position: absolute;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px #0002;
+    z-index: 20;
+    margin-top: 2px;
+    width: 100%;
+}
+
+.dayItem {
+    padding: 11px;
+    cursor: pointer;
+    color: var(--text-dark);
+}
+
+.dayItemActive {
+    font-weight: 700;
+    background: var(--chip-bg);
+}
+
+/* Search */
+.searchForm {
+    margin: 0;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.searchInput {
+    color: var(--text-dark);
+    background: var(--chip-bg);
+    border: none;
+    border-radius: 10px;
+    padding: 9px 15px;
+    font-weight: 600;
+    font-size: 16px;
+    width: 100%;
+    display: block;
+    box-sizing: border-box;
+}
+
+/* Nearby list (재사용 - 핀 리스트에도 사용 가능) */
+.nearbyList {
+    max-height: 400px;
+    overflow-y: auto;
+    margin: 4px 0 16px;
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 2px 6px #0001;
+    padding: 8px;
+}
+
+.nearbyTitle {
+    font-weight: 700;
+    margin: 7px 0 8px 5px;
+    font-size: 16px;
+}
+
+.nearbyItem {
+    display: flex;
+    align-items: center;
+    margin-bottom: 13px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 8px;
+    cursor: pointer;
+}
+
+.nearbyThumb {
+    width: 60px;
+    height: 60px;
+    border-radius: 9px;
+    object-fit: cover;
+    margin-right: 13px;
+}
+
+.nearbyName {
+    font-weight: 600;
+    font-size: 15px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.nearbyMeta {
+    color: #dc143c;
+    font-size: 14px;
+}
+
+.nearbySub {
+    font-size: 12px;
+    color: #888;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Pin list head */
+.pinListHead {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.pinLoading {
+    color: var(--chip-bg);
+}
+
+/* Map area */
+.mapArea {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+}

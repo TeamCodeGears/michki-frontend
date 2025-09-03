@@ -1,7 +1,7 @@
 import React from 'react';
 import { useState, useEffect, useRef, useContext } from 'react';
 import './LanguageButton.css';
-import langIcon from '../assets/language-icon.png';
+import langIcon from '../assets/language-icon.webp';
 import { LanguageContext } from '../context/LanguageContext';
 
 function LanguageButton() {

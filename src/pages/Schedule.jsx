@@ -1,8 +1,8 @@
-import React from "react";
+// src/pages/Schedule.jsx
+import { useParams } from "react-router-dom";
 import ScheduleMap from "../components/ScheduleMap";
 
-function Schedule() {
-  return <ScheduleMap />;
+export default function Schedule() {
+  const { planId, shareURI } = useParams();
+  return <ScheduleMap key={shareURI ?? planId ?? "schedule-root"} />;
 }
-
-export default Schedule;
