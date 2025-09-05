@@ -1,0 +1,43 @@
+.notifications-root { margin-left: auto; position: relative; }
+
+.notifications-button {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 20px;
+  padding: 6px;
+}
+
+.notifications-count {
+  display: inline-block;
+  min-width: 18px;
+  height: 18px;
+  line-height: 18px;
+  border-radius: 9px;
+  background: #ff4d4f;
+  color: #fff;
+  font-size: 12px;
+  padding: 0 6px;
+  margin-left: 6px;
+}
+
+.notifications-dropdown {
+  position: absolute;
+  right: 0;
+  top: 36px;
+  width: 300px;
+  max-height: 360px;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0,0,0,.12);
+  z-index: 1200;
+  padding: 8px;
+}
+
+.notifications-empty { padding: 12px; color: #666; }
+
+.notification-item { padding: 8px; border-bottom: 1px solid #f3f3f3; }
+.notification-title { font-size: 14px; font-weight: 600; }
+.notification-body { font-size: 13px; color: #666; margin-top: 4px; }

@@ -6,8 +6,8 @@ import YearSelector from "../components/YearSelector";
 import ScheduleCreationModal from "../components/ScheduleCreationModal";
 import { LanguageContext } from "../context/LanguageContext";
 import { texts as allTexts } from "../data/translations";
-import { listPlans, deletePlan, getNotifications, markNotificationsRead } from "../api/plans";
-import createPlanStompClient from "../socket/planSocket";
+import { listPlans, deletePlan } from "../api/plans";
+import Notifications from "../components/Notifications";
 
 // (생략 없는 이미지 임포트들 그대로 유지)
 import osakaImage1 from "../assets/Osaka1.webp";
@@ -188,8 +188,6 @@ function DashboardPage() {
 
   const [year, setYear] = useState(new Date().getFullYear());
   const [remotePlans, setRemotePlans] = useState([]);
-  const [notifications, setNotifications] = useState([]);
-  const [notifOpen, setNotifOpen] = useState(false);
 
   // ★ 복원이 끝난 뒤에만 리다이렉트 판단
   useEffect(() => {
@@ -206,76 +204,21 @@ function DashboardPage() {
       } catch (e) {
         console.error("failed", e);
       }
-      // 알림도 같이 불러오기(존재하면 보여주기)
-      try {
-        const noti = await getNotifications();
-        setNotifications(Array.isArray(noti) ? noti : []);
-      } catch (e) {
-        console.error("Alram call failed", e);
-        // 무시
-      }
     })();
   }, [year]);
 
-  // 웹소켓으로 실시간 알림 구독
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("user");
-      if (!raw) return;
-      const u = JSON.parse(raw);
-      const memberId = u?.memberId ?? u?.id ?? null;
-      if (!memberId) return;
+  // notifications 관련 로직은 별도 컴포넌트로 분리되어 `Notifications`에서 관리합니다.
 
-      const token = localStorage.getItem("accessToken") || null;
-      const client = createPlanStompClient({ token });
-      let sub;
-
-      client.onConnect = () => {
-        try {
-          sub = client.subscribe(`/sub/member/${memberId}/notifications`, (msg) => {
-            try {
-              const ev = JSON.parse(msg.body || "null");
-              if (!ev) return;
-              // prepend new notification
-              setNotifications((prev) => {
-                // avoid duplicates by id if present
-                const id = ev.id ?? ev.notificationId ?? ev.planId + "-" + (ev.type ?? "");
-                if (prev.some((p) => String(p.id) === String(id))) return prev;
-                const normalized = {
-                  id: ev.id ?? ev.notificationId ?? id,
-                  title: ev.title ?? ev.planTitle ?? ev.type ?? "알림",
-                  body: ev.body ?? ev.message ?? ev.text ?? "",
-                  raw: ev,
-                };
-                return [normalized, ...prev];
-              });
-            } catch (err) {
-              console.warn("failed parse notification msg", err);
-            }
-          });
-        } catch (err) {
-          console.warn("subscribe notifications failed", err);
-        }
-      };
-
-      client.activate();
-
-      return () => {
-        try {
-          sub?.unsubscribe();
-        } catch (err) {
-          console.warn("unsubscribe failed", err);
-        }
-        try {
-          client.deactivate();
-        } catch (err) {
-          console.warn("stomp deactivate failed", err);
-        }
-      };
-    } catch (err) {
-      console.warn("notifications subscription setup failed", err);
-    }
-  }, []);
+  // localStorage에서 memberId와 token을 읽어 Notifications에 전달
+  const rawUser = typeof window !== "undefined" ? localStorage.getItem("user") : null;
+  let memberId = null;
+  try {
+    const u = rawUser ? JSON.parse(rawUser) : null;
+    memberId = u?.memberId ?? u?.id ?? null;
+  } catch (err) {
+    memberId = null;
+  }
+  const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
 
   const handleCardClick = (destinationData) => {
     const imgs = imageMap[destinationData.engName] || [];
@@ -325,76 +268,7 @@ function DashboardPage() {
               onChange={(y) => setYear(Number(String(y).match(/\d{4}/)?.[0]))}
             />
           </div>
-          {/* 알림 버튼 */}
-          <div style={{ marginLeft: "auto", position: "relative" }}>
-            <button
-              aria-label="알림"
-              title="알림"
-              onClick={async () => {
-                setNotifOpen((v) => !v);
-                // 열 때 미확인 알림이 있다면 읽음 처리 호출
-                if (!notifOpen && notifications && notifications.length) {
-                  try {
-                    await markNotificationsRead();
-                    setNotifications([]);
-                  } catch (e) {
-                    console.error("plans fetch failed", e)
-                    // 실패해도 UI는 계속 동작
-                  }
-                }
-              }}
-              style={{
-                border: "none",
-                background: "transparent",
-                cursor: "pointer",
-                fontSize: 20,
-                padding: 6,
-              }}
-            >
-              🔔
-              {notifications && notifications.length > 0 && (
-                <span style={{
-                  display: "inline-block",
-                  minWidth: 18,
-                  height: 18,
-                  lineHeight: "18px",
-                  borderRadius: 9,
-                  background: "#ff4d4f",
-                  color: "#fff",
-                  fontSize: 12,
-                  padding: "0 6px",
-                  marginLeft: 6,
-                }}>{notifications.length}</span>
-              )}
-            </button>
-            {notifOpen && (
-              <div style={{
-                position: "absolute",
-                right: 0,
-                top: 36,
-                width: 300,
-                maxHeight: 360,
-                overflow: "auto",
-                background: "#fff",
-                border: "1px solid #eee",
-                borderRadius: 8,
-                boxShadow: "0 6px 18px rgba(0,0,0,.12)",
-                zIndex: 1200,
-                padding: 8,
-              }}>
-                {(!notifications || notifications.length === 0) ? (
-                  <div style={{ padding: 12, color: "#666" }}>알림이 없습니다.</div>
-                ) : (
-                  notifications.map((n, idx) => (
-                    <div key={n.id ?? idx} style={{ padding: 8, borderBottom: "1px solid #f3f3f3" }}>
-                      <div style={{ fontSize: 14, fontWeight: 600 }}>{n.title ?? n.message ?? "알림"}</div>
-                      <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>{n.body ?? n.text ?? n.message ?? ""}</div>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
+          <Notifications memberId={memberId} token={token} />
         </div>
 
         <div className="trip-list" style={{ marginTop: 12 }}>
