@@ -685,47 +685,13 @@ function ScheduleMap() {
       const latLng = e.latLng;
       if (!latLng) return;
 
-      const [sd, ed] = dateRange;
-      if (!(sd instanceof Date) || isNaN(sd) || !(ed instanceof Date) || isNaN(ed)) {
-        alert("먼저 여행 날짜를 선택하세요.");
-        return;
-      }
-      const days = getDaysArr(sd, ed);
-      const travelDate = ymd(days[selectedDayIdxRef.current]);
-
-      const basePin = {
+      await addPinCore({
+        position: { lat: latLng.lat(), lng: latLng.lng() },
         name: "직접 지정한 위치",
         address: `위도: ${latLng.lat().toFixed(5)}, 경도: ${latLng.lng().toFixed(5)}`,
         photo: null,
-        position: { lat: latLng.lat(), lng: latLng.lng() },
-        order: (pinsByDay[selectedDayIdxRef.current]?.length || 0) + 1,
-        comment: "",
         googlePlaceId: "",
-      };
-
-      if (planId) {
-        try {
-          await createPlace(planId, {
-            name: basePin.name,
-            description: "",
-            latitude: basePin.position.lat,
-            longitude: basePin.position.lng,
-            googlePlaceId: "",
-            travelDate,
-            orderInDay: basePin.order,
-          });
-          await refreshPinsFromServer();
-
-        } catch (err) {
-          console.error("자유핀 저장 실패:", err);
-          alert("자유 핀 저장 실패: " + err.message);
-        }
-      } else {
-        const localId = Date.now();
-        setPinsByDay((prev) =>
-          prev.map((arr, idx) => (idx === selectedDayIdxRef.current ? [...arr, { ...basePin, id: localId }] : arr))
-        );
-      }
+      });
     });
 
     hydrateSavedPinPhotos();
@@ -893,41 +859,15 @@ function ScheduleMap() {
 
     const data = infoWindow || searchResult;
     const position = toLatLngObj(data.position);
-    const days = getDaysArr(startDate, endDate);
-    const travelDate = ymd(days[selectedDayIdx]);
-
-    const basePin = {
-      name: data.info.name || "장소",
-      address: data.info.address || "",
-      photo: data.info.photo ?? null,
-      position,
-      order: pins.length + 1,
-      comment: "",
-      googlePlaceId: data.info.placeId || "",
-    };
 
     try {
-      if (planId) {
-        await createPlace(planId, {
-          name: basePin.name,
-          description: "",
-          latitude: position.lat,
-          longitude: position.lng,
-          googlePlaceId: basePin.googlePlaceId,
-          travelDate,
-          orderInDay: basePin.order,
-        });
-        await refreshPinsFromServer();
-
-        if (activeCategory === "__recommended__" && showCategoryList) {
-          handleNearbySearch("__recommended__", { forceRefresh: true });
-        }
-      } else {
-        const localId = Date.now();
-        setPinsByDay((prev) =>
-          prev.map((arr, idx) => (idx === selectedDayIdx ? [...arr, { ...basePin, id: localId }] : arr))
-        );
-      }
+      await addPinCore({
+        position,
+        name: data.info.name || "장소",
+        address: data.info.address || "",
+        photo: data.info.photo ?? null,
+        googlePlaceId: data.info.placeId || "",
+      });
     } catch (err) {
       console.error(err);
       alert("장소 등록 실패: " + err.message);
@@ -937,6 +877,63 @@ function ScheduleMap() {
       setSearchInput("");
     }
   };
+
+
+  // 새 공통 함수
+  const addPinCore = async ({ position, name, address, photo, googlePlaceId }) => {
+    if (readOnly) { alert("읽기 전용입니다. 공유 보기에서는 편집할 수 없어요."); return; }
+    if (!hasValidDates) { alert("먼저 여행 날짜를 선택하세요."); return; }
+
+    const days = getDaysArr(startDate, endDate);
+    const dayIdx = selectedDayIdxRef.current; // ✅ 항상 ref로 고정
+    const travelDate = ymd(days[dayIdx]);
+
+    // ✅ order는 항상 "최신" 길이 기준으로 계산
+    // 서버 모드에선 서버 리스트를 즉시 조회해 해당 날짜 개수를 기반으로 계산(동시성에 안전)
+    const getNextOrder = async () => {
+      if (!planId) return (pinsByDay[dayIdx]?.length || 0) + 1;
+      const all = await listPlaces(planId);
+      const count = all.filter(p => (p.travelDate || "").slice(0, 10) === travelDate).length;
+      return count + 1;
+    };
+
+    const order = await getNextOrder();
+
+    if (planId) {
+      // 서버 저장
+      await createPlace(planId, {
+        name: name || "장소",
+        description: "",
+        latitude: position.lat,
+        longitude: position.lng,
+        googlePlaceId: googlePlaceId || "",
+        travelDate,
+        orderInDay: order,
+      });
+      await refreshPinsFromServer();
+    } else {
+      // 로컬 저장(비로그인)
+      const localId = Date.now();
+      const basePin = {
+        id: localId,
+        name: name || "장소",
+        address: address || "",
+        photo: photo ?? null,
+        position,
+        order,
+        comment: "",
+        googlePlaceId: googlePlaceId || "",
+        travelDate,
+      };
+      setPinsByDay(prev => prev.map((arr, idx) => idx === dayIdx ? [...arr, basePin] : arr));
+    }
+
+    // 추천 리스트 보여주는 중이면 최신화(기존 동작 유지)
+    if (activeCategory === "__recommended__" && showCategoryList) {
+      handleNearbySearch("__recommended__", { forceRefresh: true });
+    }
+  };
+
 
   // 삭제
   const handleDeletePin = async (id) => {
