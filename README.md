@@ -1,12 +1,86 @@
-# React + Vite
+# michiki‑frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## 概要
 
-Currently, two official plugins are available:
+このリポジトリは旅行計画サービス **Michiki** のフロントエンドです。React と Vite を基盤とし、Google OAuth による認証、Google Maps API を用いた地図表示、リアルタイムの共同編集機能などを備えています。言語は日本語と韓国語に対応しています。
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## 特徴
 
-## Expanding the ESLint configuration
+* **ルーティング** – React Router により以下のページを提供します：ホームページ、ダッシュボード、利用規約、プライバシーポリシー、計画一覧ページ、計画 ID 付きスケジュールページ、共有 URI から閲覧する共有ページ。
+* **多言語対応** – `LanguageContext` を介して日本語と韓国語を選択でき、言語切替ボタンで動的に変更可能です。
+* **Google 認証** – `@react-oauth/google` を利用した OAuth2 認証を採用しており、Google アカウントでログインした後、バックエンド API からアクセストークンとユーザー情報を取得します。
+* **ダッシュボード** – 過去／現在の旅行計画の一覧や新規計画の作成を行う画面です。検索バーで都市名を検索し、タブで日本と韓国を切り替えながらおすすめ都市を閲覧できます。既存の計画をクリックするとスケジュールページへ遷移し、右上の削除ボタンで計画を削除できます。
+* **スケジュールページ** – Google Maps を使ったマップ上で旅程を可視化します。検索した場所をピンとして追加し、ドラッグ＆ドロップで順序や日付を変更できます。ピンの詳細を編集するモーダルではメモを残すことができます。
+* **計画の作成** – 新規計画モーダルでは国→都市→日程を選択して計画を作成します。日程名・開始日・終了日を入力して送信するとバックエンドへ POST し、作成された計画ページへ遷移します。
+* **リアルタイム共同編集** – STOMP/WebSocket を用いて他ユーザーのマウス位置、チャット、色変更をリアルタイムで同期します。`CursorLayer` コンポーネントでは接続が確立するとマウス移動イベント・オンラインユーザー一覧・チャットメッセージなどを購読し、各ユーザーのカーソルと吹き出しを表示します。
+* **通知と共有** – 旅行計画に対する通知をダッシュボードで表示し、任意の計画を `share/<shareURI>` パスで共有できます。
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## ディレクトリ構成（抜粋）
+
+| ディレクトリ/ファイル | 内容 |
+| --- | --- |
+| `src/main.jsx` | ルーティングと `GoogleOAuthProvider`・`LanguageProvider` のセットアップ |
+| `src/pages` | `HomePage`, `DashboardPage`, `Schedule` などページコンポーネントを格納 |
+| `src/components` | ヘッダーやフッター、言語ボタン、ログインボタン、モーダル、ドラッグ可能なピン等の UI コンポーネント |
+| `src/api` | `plans.js` と `place.js` はバックエンド REST API との通信をまとめたラッパー。計画の一覧取得・作成・削除、場所の追加・更新などを提供 |
+| `src/socket/planSocket.js` | SockJS/STOMP を介した WebSocket 接続と購読／発行ヘルパーを実装。マウスイベント・チャット・色変更等のメッセージ送受信を担当 |
+| `src/data/translations.js` | 日本語と韓国語のテキスト辞書。旅行先の都市リストや画面表示テキストが定義されている |
+
+## 必要条件
+
+* [Node.js](https://nodejs.org/) 18 以上を推奨します。Vite を利用するため npm もしくは yarn が必要です。
+* Google OAuth クライアント ID、リダイレクト URI、Google Maps API キーなどの外部サービス用情報を取得しておく必要があります。
+
+## セットアップ
+
+1. リポジトリをクローンし、依存ライブラリをインストールします。
+   ```bash
+   git clone https://github.com/TeamCodeGears/michki-frontend.git
+   cd michki-frontend
+   npm install
+   # または yarn
+   ```
+2. プロジェクトルートに `.env.local` を作成し、以下の環境変数を設定します。値は自身の環境に合わせて入力してください。
+
+| 変数名 | 説明 |
+| --- | --- |
+| `VITE_API_BASE` | バックエンド API のベース URL (例: `http://localhost:8080`) |
+| `VITE_GOOGLE_CLIENT_ID` | Google OAuth のクライアント ID。`main.jsx` で `GoogleOAuthProvider` に渡されます |
+| `VITE_GOOGLE_REDIRECT_URI` | Google 認証後にリダイレクトする URI。`LoginButton.jsx` で使用|
+| `VITE_GOOGLE_MAPS_API_KEY` | Google Maps API キー。地図表示やプレイス検索に使用 |
+
+## 実行方法
+
+* 開発用サーバー起動：
+  ```bash
+  npm run dev
+  ```
+  デフォルトでは `http://localhost:5173` でアプリを確認できます。コードを変更すると自動的に更新されます。
+
+* ビルド：
+  ```bash
+  npm run build
+  ```
+  `dist` ディレクトリに最適化された静的ファイルが生成されます。
+
+* デプロイ：GitHub Pages へデプロイする場合、`gh-pages` パッケージが含まれているため以下で公開できます。
+  ```bash
+  npm run deploy
+  ```
+  `package.json` の `homepage` フィールドに設定された URL にデプロイされます。
+
+## 使い方
+
+1. ブラウザでアプリにアクセスし、ホーム画面の「Googleで始める」ボタンからログインします。ログイン済みの場合はダッシュボードへ遷移します。
+2. ダッシュボードでは年を選択して既存の旅行計画を表示し、削除や選択ができます。左下のプラスボタンで新規計画モーダルが開き、国と都市を選び日程名・開始日・終了日を入力して計画を作成します。
+3. 計画ページでは、Google Maps 上で検索バーから場所を検索してピンを打ち、カテゴリー別ボタンで絞り込みます。ピンをドラッグして訪問順序を調整し、ピンをクリックするとメモ編集ダイアログが表示されます。
+4. 右上の共有ボタンから共有 URI を取得し、他のユーザーに共有すると同じ計画を共同編集できます。マウスポインタやチャットはリアルタイムで同期され、各参加者には色が割り当てられます。
+
+## 注意事項
+
+* このプロジェクトはポートフォリオ目的で作成されたサンプルアプリケーションです。`TermsPage.jsx` や `PrivacyPage.jsx` に記載されている利用規約やプライバシーポリシーは架空のものであり、実際の法的効力はありません。
+* アプリを利用する際は、ご自身の Google API キーや OAuth 情報を適切に管理してください。
+
+## ライセンス
+
+ライセンスはリポジトリに記載がないため、著作権は作者に帰属します。個人の学習やポートフォリオ用途でご利用ください。
