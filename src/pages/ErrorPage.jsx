@@ -1,4 +1,3 @@
-// src/pages/ErrorPage.jsx
 function ErrorPage() {
   return (
     <div style={{ textAlign: "center", padding: "2rem" }}>

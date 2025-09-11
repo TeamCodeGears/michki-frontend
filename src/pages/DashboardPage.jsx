@@ -1,4 +1,3 @@
-// src/pages/DashboardPage.jsx
 import { useEffect, useState, useContext, useMemo } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import "./DashboardPage.css";

@@ -1,8 +1,3 @@
-// src/api/auth.js
-// NOTE: client.js가 이 파일의 refreshAccessToken을 import하므로
-// 여기서는 client의 apiFetch를 import하지 않고, 순수 fetch만 사용해
-// 순환 의존을 피한다.
-
 const RAW_BASE = import.meta.env.VITE_API_BASE || "";
 const API_BASE = RAW_BASE.endsWith("/") ? RAW_BASE.slice(0, -1) : RAW_BASE;
 

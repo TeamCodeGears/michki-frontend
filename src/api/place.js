@@ -1,4 +1,3 @@
-// src/api/place.js
 import { apiFetch } from "./client";
 
 /* 공통 유틸 */

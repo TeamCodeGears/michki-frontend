@@ -1,10 +1,4 @@
-.footer-container {
-  /*
-  position: absolute;
-  bottom: 20px; // 페이지 하단에서 20px 위에 위치 
-  left: 50%;
-  transform: translateX(-50%);*/
-  
+.footer-container {  
   width: 100%; 
   padding : 20px 0;
   display: flex;

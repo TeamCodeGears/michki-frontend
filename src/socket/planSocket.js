@@ -1,11 +1,6 @@
 import SockJS from "sockjs-client";
 import { Client } from "@stomp/stompjs";
 
-/**
- * API_BASE 규칙
- * - VITE_API_BASE가 있으면 사용
- * - 없으면 same-origin 상대경로 사용
- */
 const RAW_BASE =
   (typeof window !== "undefined" && window.__API_BASE__) ||
   (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_BASE) ||

@@ -1,4 +1,3 @@
-// src/components/DestinationCreateModal.jsx
 import { useState, useEffect, useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import DatePicker from "react-datepicker";

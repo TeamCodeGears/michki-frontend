@@ -37,6 +37,3 @@ html, body, #root {
   position: relative;
   overflow: visible;
 }
-
-/* ❗️여기엔 .main-text / .main-photo 절대배치 정의하지 마세요.
-   홈 전용 스타일은 HomePage.css에서 관리합니다. */

@@ -1,8 +1,7 @@
-// src/components/InlineLoginFab.jsx
 import React, { useContext, useState } from "react";
 import { useGoogleLogin } from "@react-oauth/google";
 import { LanguageContext } from "../context/LanguageContext";
-import { decodeJwt } from "../utils/jwt"; // ✅ JWT 디코더
+import { decodeJwt } from "../utils/jwt"; 
 
 const API_BASE =
   (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_BASE) ||

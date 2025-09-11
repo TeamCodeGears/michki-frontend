@@ -1,4 +1,3 @@
-// src/components/cursor/CursorLayer.jsx
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import createPlanStompClient, {
   subscribePlanMouse,

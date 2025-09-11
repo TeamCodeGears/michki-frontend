@@ -1,4 +1,3 @@
-// src/pages/Schedule.jsx
 import { useParams } from "react-router-dom";
 import ScheduleMap from "../components/ScheduleMap";
 

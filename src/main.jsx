@@ -57,7 +57,7 @@ const router = createBrowserRouter([
       { path: "schedule", element: <Schedule /> },
       { path: "schedule/:planId", element: <Schedule /> },
 
-      // 🔗 공유 보기 (shareURI)
+      // 공유 보기 (shareURI)
       { path: "share/:shareURI", element: <Schedule /> },
 
       // 최종 404 캐치

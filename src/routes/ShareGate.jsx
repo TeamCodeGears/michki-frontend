@@ -1,4 +1,3 @@
-// src/routes/ShareGate.jsx
 import { useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getSharedPlan } from "../api/plans"; // 아래 2번에 추가

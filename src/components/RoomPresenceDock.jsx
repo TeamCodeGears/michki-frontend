@@ -1,4 +1,3 @@
-// src/components/RoomPresenceDock.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { getPlan, getMyColorViaPlan, markNotificationsRead } from "../api/plans";
 import createPlanStompClient, {

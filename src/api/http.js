@@ -1,4 +1,3 @@
-// src/api/http.js
 import axios from "axios";
 
 const baseURL =

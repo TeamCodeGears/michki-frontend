@@ -1,4 +1,3 @@
-// src/utils/avatarColor.js
 const KEY = (planId) => `avatarBorderColor:${planId ?? "global"}`;
 
 export function setAvatarBorderColor(planId, color) {

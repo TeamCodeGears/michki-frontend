@@ -1,6 +1,5 @@
 import { apiFetch } from "./client";
 
-/* 공통 유틸: plans.js / place.js 와 동일하게 맞춤 */
 async function fetchJson(path, options) {
   const res = await apiFetch(path, options);
   if (res.status === 204) return null;

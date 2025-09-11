@@ -1,11 +1,10 @@
-// src/components/LoginButton.jsx
 import React, { useContext, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import "./LoginButton.css";
 import googleIcon from "../assets/google-icon.webp";
 import { useGoogleLogin } from "@react-oauth/google";
 import { LanguageContext } from "../context/LanguageContext";
-import { decodeJwt } from "../utils/jwt";   // ✅ JWT 디코더 추가
+import { decodeJwt } from "../utils/jwt";
 
 const API_BASE =
   (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_BASE) ||

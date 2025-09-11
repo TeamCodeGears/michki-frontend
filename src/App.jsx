@@ -43,7 +43,7 @@ function App() {
       <LanguageButton />
 
       <main className="main-outlet">
-        {/* 🔑 모든 자식에서 useOutletContext()로 user/isLoggedIn 사용 */}
+        {/* 모든 자식에서 useOutletContext()로 user/isLoggedIn 사용 */}
         <Outlet
           context={{ isLoggedIn, setIsLoggedIn, user, setUser, bootstrapped }}
         />
