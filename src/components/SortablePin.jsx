@@ -1,4 +1,6 @@
-import React from "react";
+import React, { useContext } from "react";
+import { LanguageContext } from "../context/LanguageContext";
+import { texts as allTexts } from "../data/translations";
 
 function SortablePin({
   pin,
@@ -11,6 +13,9 @@ function SortablePin({
   style,
   isDragging,
 }) {
+  const { language } = useContext(LanguageContext);
+  const texts = allTexts[language] || {};
+
   return (
     <div
       ref={setNodeRef}
@@ -44,15 +49,15 @@ function SortablePin({
           backgroundPosition: "center",
           marginRight: 10,
         }}
-      ></div>
+      />
       <div style={{ flex: 1 }}>
         <div style={{ fontWeight: 600 }}>{pin.name}</div>
         <div style={{ fontSize: 13, color: "#888" }}>
-          {pin.comment || "메모 없음"}
+          {pin.comment || texts.memo || "메모 없음"}
         </div>
       </div>
       <button
-        onClick={e => {
+        onClick={(e) => {
           e.stopPropagation();
           onDelete();
         }}

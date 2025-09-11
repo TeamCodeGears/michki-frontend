@@ -261,6 +261,12 @@ function ScheduleMap() {
   const { language } = useContext(LanguageContext);
   const texts = allTexts[language];
 
+  // 리스너(우클릭 등)에서 최신 값을 쓰기 위한 ref
+  const readOnlyRef = useRef(false);
+  const textsRef = useRef(texts);
+  useEffect(() => { readOnlyRef.current = isSharedMode ? true : !isLoggedIn; }, [isSharedMode, isLoggedIn]);
+  useEffect(() => { textsRef.current = texts; }, [texts]);
+
   const categories = [
     { label: texts.food, type: "restaurant", icon: "🍽️" },
     { label: texts.hotel, type: "lodging", icon: "🛏️" },
@@ -678,16 +684,21 @@ function ScheduleMap() {
 
     // 우클릭 → 자유 핀
     rightClickListenerRef.current = map.addListener("rightclick", async (e) => {
-      if (readOnly) {
+      if (readOnlyRef.current) {
         alert("읽기 전용입니다. 공유 보기에서는 편집할 수 없어요.");
         return;
       }
       const latLng = e.latLng;
       if (!latLng) return;
 
+      const label =
+        textsRef.current?.designatedLocation
+        ?? allTexts?.[language]?.designatedLocation
+        ?? "직접 지정한 위치";
+
       await addPinCore({
         position: { lat: latLng.lat(), lng: latLng.lng() },
-        name: "직접 지정한 위치",
+        name: label,
         address: `위도: ${latLng.lat().toFixed(5)}, 경도: ${latLng.lng().toFixed(5)}`,
         photo: null,
         googlePlaceId: "",

@@ -45,6 +45,9 @@ export const texts = {
     outRoom: "방나가기",
     recommended: "추천",
     membershipWithdrawal: "회원탈퇴",
+    memo: "메모없음",
+    designatedLocation: "直接指定した位置",
+    inputChat: "메시지 입력 후 Enter",
     
     myTrips: [
       { name: '내 여행 1', date: '2025/07/01 ~ 2025/07/05' },
@@ -137,6 +140,9 @@ export const texts = {
     outRoom: "部屋を出る",
     recommended: "推薦",
     membershipWithdrawal: "会員脱退",
+    memo: "メモなし",
+    designatedLocation: "直接指定した位置",
+    inputChat: "メッセージ入力後 Enter",
     myTrips: [
       { name: '私の旅行 1', date: '2025/07/01 ~ 2025/07/05' },
       { name: '私の旅行 2', date: '2025/06/15 ~ 2025/06/20' },

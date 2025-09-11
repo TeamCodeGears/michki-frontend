@@ -8,6 +8,8 @@ import createPlanStompClient, {
   sendPlanChat,
 } from "../../socket/planSocket";
 import "./CursorLayer.css";
+import { LanguageContext } from "../../context/LanguageContext";
+import { texts as allTexts } from "../../data/translations";
 
 const BUBBLE_MS = 4000;
 
@@ -66,6 +68,8 @@ export default function CursorLayer({
   /** Map<string(memberId), string(hexColor)> — 서버가 내려준 색만 담긴 맵 */
   colorsByMember,
 }) {
+  const { language } = React.useContext(LanguageContext);
+  const texts = allTexts[language] || {};
   const token = useMemo(() => {
     try { return localStorage.getItem("accessToken") || undefined; }
     catch { return undefined; }
@@ -542,7 +546,7 @@ export default function CursorLayer({
                 setChatOpen(false);
               }
             }}
-            placeholder="메시지 입력 후 Enter"
+            placeholder={texts.inputChat}
             aria-label="채팅 메시지 입력"
           />
         </div>
